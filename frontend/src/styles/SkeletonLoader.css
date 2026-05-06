@@ -1,0 +1,245 @@
+/* Base skeleton styles */
+.slot-skeleton,
+.appointment-card-skeleton,
+.summary-card-skeleton,
+.table-row-skeleton,
+.calendar-skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--bg-tertiary);
+  border-radius: 10px;
+}
+
+/* Shimmer animation */
+.skeleton-shimmer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(6, 182, 212, 0.1),
+    transparent
+  );
+  animation: shimmer 2s infinite;
+  pointer-events: none;
+}
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* Skeleton line base */
+.skeleton-line {
+  height: 12px;
+  background: var(--bg-secondary);
+  border-radius: 6px;
+  margin-bottom: 8px;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* Slot Skeleton */
+.slot-skeleton {
+  width: 100%;
+  height: 60px;
+  border: 1.5px solid var(--border-color);
+  animation: fadeIn 0.3s ease-out;
+}
+
+/* Appointment Card Skeleton */
+.appointment-card-skeleton {
+  border: 1.5px solid var(--border-color);
+  padding: 16px;
+  margin-bottom: 12px;
+  min-height: 150px;
+  animation: fadeIn 0.3s ease-out;
+}
+
+.skeleton-header {
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.skeleton-title {
+  width: 60%;
+  height: 16px;
+  margin-bottom: 10px;
+}
+
+.skeleton-date {
+  width: 40%;
+  height: 14px;
+}
+
+.skeleton-body {
+  margin-bottom: 16px;
+}
+
+.skeleton-text {
+  width: 100%;
+  height: 12px;
+}
+
+.skeleton-text.short {
+  width: 70%;
+}
+
+.skeleton-footer {
+  display: flex;
+  gap: 8px;
+}
+
+.skeleton-button {
+  width: 100px;
+  height: 36px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+/* Summary Card Skeleton */
+.summary-card-skeleton {
+  padding: 0.6rem;
+  border: 1.5px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-height: 100px;
+  animation: fadeIn 0.3s ease-out;
+}
+
+.skeleton-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--bg-secondary);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.skeleton-label {
+  width: 60%;
+  height: 10px;
+}
+
+.skeleton-value {
+  width: 80%;
+  height: 14px;
+}
+
+/* Table Row Skeleton */
+.table-row-skeleton {
+  background: var(--bg-secondary);
+  border: 1.5px solid var(--border-color);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 12px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  min-height: 120px;
+  animation: fadeIn 0.3s ease-out;
+}
+
+.skeleton-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Calendar Skeleton */
+.calendar-skeleton {
+  width: 100%;
+  border: 1.5px solid var(--border-color);
+  padding: 16px;
+  animation: fadeIn 0.3s ease-out;
+}
+
+.skeleton-calendar-header {
+  margin-bottom: 16px;
+  display: flex;
+  justify-content: center;
+}
+
+.skeleton-month {
+  width: 150px;
+  height: 20px;
+}
+
+.skeleton-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+
+.skeleton-calendar-day {
+  aspect-ratio: 1;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.skeleton-calendar-day:nth-child(3n) {
+  animation-delay: 0.1s;
+}
+
+.skeleton-calendar-day:nth-child(5n) {
+  animation-delay: 0.2s;
+}
+
+/* Multiple skeleton items stagger */
+.slot-skeleton:nth-child(1),
+.appointment-card-skeleton:nth-child(1),
+.summary-card-skeleton:nth-child(1),
+.table-row-skeleton:nth-child(1) {
+  animation-delay: 0s;
+}
+
+.slot-skeleton:nth-child(2),
+.appointment-card-skeleton:nth-child(2),
+.summary-card-skeleton:nth-child(2),
+.table-row-skeleton:nth-child(2) {
+  animation-delay: 0.1s;
+}
+
+.slot-skeleton:nth-child(3),
+.appointment-card-skeleton:nth-child(3),
+.summary-card-skeleton:nth-child(3),
+.table-row-skeleton:nth-child(3) {
+  animation-delay: 0.2s;
+}
+
+.slot-skeleton:nth-child(4),
+.appointment-card-skeleton:nth-child(4),
+.summary-card-skeleton:nth-child(4),
+.table-row-skeleton:nth-child(4) {
+  animation-delay: 0.3s;
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+  .table-row-skeleton {
+    grid-template-columns: 1fr;
+  }
+
+  .appointment-card-skeleton {
+    padding: 12px;
+  }
+}

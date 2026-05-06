@@ -1,0 +1,210 @@
+.calendar-integration {
+  position: relative;
+  display: inline-block;
+}
+
+.btn-add-calendar {
+  padding: 0.75rem 1.5rem;
+  background: var(--accent-blue);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 44px;
+}
+
+.btn-add-calendar:hover:not(:disabled) {
+  background: var(--accent-blue-hover);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 123, 255, 0.3);
+}
+
+.btn-add-calendar:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.calendar-options {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  left: 0;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 1.5rem;
+  box-shadow: 0 8px 24px var(--shadow);
+  z-index: 1000;
+  min-width: 320px;
+  animation: slideDown 0.2s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.calendar-options-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.calendar-options-header h3 {
+  margin: 0;
+  font-size: 1.125rem;
+  color: var(--text-primary);
+}
+
+.close-button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 1.5rem;
+  cursor: pointer;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  min-height: auto;
+}
+
+.close-button:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.calendar-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.calendar-option {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.875rem 1rem;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  color: var(--text-primary);
+  text-decoration: none;
+  font-weight: 500;
+  transition: all 0.2s;
+  cursor: pointer;
+  min-height: 48px;
+}
+
+.calendar-option:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent-blue);
+  transform: translateX(4px);
+}
+
+.calendar-option .icon {
+  font-size: 1.5rem;
+  flex-shrink: 0;
+}
+
+.calendar-option.google {
+  border-left: 3px solid #4285F4;
+}
+
+.calendar-option.outlook {
+  border-left: 3px solid #0078D4;
+}
+
+.calendar-option.yahoo {
+  border-left: 3px solid #6001D2;
+}
+
+.calendar-option.download {
+  border-left: 3px solid var(--accent-green);
+  background: transparent;
+  border: 1px solid var(--border-color);
+  width: 100%;
+  text-align: left;
+}
+
+.calendar-info {
+  padding: 0.75rem;
+  background: rgba(0, 123, 255, 0.1);
+  border-radius: 6px;
+  border-left: 3px solid var(--accent-blue);
+}
+
+.calendar-info p {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+/* Mobile */
+@media (max-width: 768px) {
+  .calendar-integration {
+    width: 100%;
+  }
+
+  .btn-add-calendar {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .calendar-options {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: calc(100% - 2rem);
+    max-width: 400px;
+    max-height: 90vh;
+    overflow-y: auto;
+    animation: slideUp 0.3s ease-out;
+  }
+
+  @keyframes slideUp {
+    from {
+      opacity: 0;
+      transform: translate(-50%, -40%);
+    }
+    to {
+      opacity: 1;
+      transform: translate(-50%, -50%);
+    }
+  }
+}
+
+@media (max-width: 480px) {
+  .calendar-options {
+    width: calc(100% - 1rem);
+    padding: 1rem;
+  }
+
+  .calendar-option {
+    font-size: 0.875rem;
+    padding: 0.75rem;
+  }
+
+  .calendar-option .icon {
+    font-size: 1.25rem;
+  }
+}

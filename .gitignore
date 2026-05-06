@@ -1,0 +1,278 @@
+# ===================================
+# Medical Appointment Booking System
+# .gitignore
+# ===================================
+
+# ============== SECRETS & ENV ==============
+# Environment variables
+.env
+.env.local
+.env.*.local
+*.env
+.env.production
+
+# API Keys and secrets
+secrets.json
+credentials.json
+service-account.json
+
+# ============== PYTHON ==============
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+backend/venv/
+backend/env/
+test_venv/
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+.benchmarks/
+
+# Pytest
+.pytest_cache/
+pytest.ini.bak
+
+# MyPy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# Logs
+*.log
+backend.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Database files (local development)
+*.db
+*.sqlite
+*.sqlite3
+test.db*
+
+# ============== NODE / REACT ==============
+# Dependencies
+node_modules/
+frontend/node_modules/
+/.pnp
+.pnp.js
+
+# Testing
+/coverage
+frontend/coverage/
+
+# Production build
+/build
+frontend/build/
+/dist
+
+# React misc
+.DS_Store
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Package manager files
+package-lock.json.bak
+yarn.lock.bak
+
+# ============== IDE / EDITORS ==============
+# VS Code
+.vscode/
+*.code-workspace
+
+# PyCharm / IntelliJ
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+
+# ============== OS FILES ==============
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# ============== PROJECT SPECIFIC ==============
+# Temporary scripts (one-time use)
+fix_*.py
+setup_*.py
+reset_*.py
+migrate_*.py
+clear_*.py
+*.sql.bak
+*.py.bak
+
+# Test databases
+test.db
+test.db.backup
+*.db.backup
+
+# Reports (generated files)
+reports/*.pdf
+reports/*.xlsx
+*.pdf
+*.xlsx
+
+# Uploaded files
+uploads/
+media/
+
+# Static files collected
+staticfiles/
+static_collected/
+
+# Telegram bot temp files
+telegram_bot/__pycache__/
+telegram_bot/*.pyc
+
+# ============== DOCKER ==============
+# Docker
+*.dockerignore.bak
+docker-compose.override.yml
+
+# ============== MISC ==============
+# Backup files
+*.bak
+*.backup
+*.tmp
+*.temp
+*~
+
+# Archive files
+*.zip
+*.tar
+*.tar.gz
+*.rar
+*.7z
+
+# Large media files (if any)
+*.mp4
+*.avi
+*.mov
+*.wmv
+
+# Certificates (if stored locally)
+*.pem
+*.key
+*.crt
+*.cer
+*.p12
+*.pfx
+
+# CI/CD temporary files
+.github/workflows/*.bak
+
+# ============== KEEP THESE ==============
+# Force include important example files
+!.env.example
+!backend/.env.example
+!frontend/.env.example
+!telegram_bot/.env.example
+
+# Force include README and docs
+!README.md
+!*/README.md
+!CONTRIBUTING.md
+!LICENSE

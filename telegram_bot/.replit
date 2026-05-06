@@ -1,0 +1,13 @@
+run = "python bot.py"
+language = "python3"
+
+[nix]
+channel = "stable-22_11"
+
+[deployment]
+run = ["python", "bot.py"]
+deploymentTarget = "cloudrun"
+
+[[ports]]
+localPort = 5000
+externalPort = 80

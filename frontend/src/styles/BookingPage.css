@@ -1,0 +1,359 @@
+.booking-page {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px 16px;
+  background: var(--bg-primary);
+  animation: fadeIn 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.booking-page header {
+  display: none;
+}
+
+.welcome-section {
+  text-align: center;
+  padding: 42px;
+  background: var(--bg-secondary);
+  border-radius: 16px;
+  box-shadow: var(--shadow-md);
+  border: 2px solid var(--border-color);
+  animation: scaleIn 0.7s cubic-bezier(0.34, 1.56, 0.64, 1);
+  position: relative;
+  overflow: hidden;
+  backdrop-filter: blur(12px);
+  transition: all 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.welcome-section:hover {
+  border-color: var(--accent-primary);
+  box-shadow: var(--shadow-xl), var(--glow-primary);
+  transform: translateY(-2px);
+}
+
+.welcome-section::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, var(--accent-primary), var(--accent-info), var(--accent-primary));
+  background-size: 200% 100%;
+  opacity: 0.85;
+  animation: shimmer 3s ease-in-out infinite;
+}
+
+.welcome-section p {
+  font-size: 0.95rem;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+}
+
+.welcome-section button {
+  background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-primary-dark) 100%);
+  color: white;
+  font-size: 1rem;
+  padding: 16px 32px;
+  font-weight: 700;
+  font-family: 'Inter', sans-serif;
+  letter-spacing: -0.015em;
+  border-radius: 12px;
+  box-shadow: var(--shadow-md);
+  transition: all 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+  border: 2px solid transparent;
+  position: relative;
+  overflow: hidden;
+}
+
+.welcome-section button::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at center, rgba(255, 255, 255, 0.22) 0%, transparent 70%);
+  opacity: 0;
+  transition: opacity 0.5s ease, transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transform: scale(0.7);
+}
+
+.welcome-section button:hover::before {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.welcome-section button:hover {
+  background: linear-gradient(135deg, var(--accent-primary-hover) 0%, var(--accent-primary-dark) 100%);
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-xl), var(--glow-success);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.booking-section {
+  background: var(--bg-secondary);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  padding: 18px;
+  border: 1.5px solid var(--border-color);
+  animation: fadeInUp 0.7s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.booking-section::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent-primary), var(--accent-info));
+  opacity: 0.8;
+}
+
+.user-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.user-info p {
+  font-size: 1.125rem;
+  color: var(--text-secondary);
+}
+
+.user-actions {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.user-info button {
+  background: var(--accent-blue);
+  color: white;
+}
+
+.user-info button:hover {
+  background: var(--accent-blue-hover);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(33, 150, 243, 0.3);
+}
+
+.user-info .logout-button {
+  background: var(--accent-red);
+}
+
+.user-info .logout-button:hover {
+  background: var(--accent-red-hover);
+  box-shadow: 0 4px 12px rgba(244, 67, 54, 0.3);
+}
+
+.back-button {
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  margin-bottom: 14px;
+  border: 1.5px solid var(--border-color);
+  padding: 0.55rem 1.1rem;
+  font-size: 0.85rem;
+  border-radius: 10px;
+  font-weight: 700;
+  letter-spacing: -0.011em;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.back-button:hover {
+  background: var(--accent-primary);
+  color: white;
+  border-color: var(--accent-primary);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow), var(--glow-primary);
+}
+
+.success-message {
+  text-align: center;
+  padding: 52px;
+  background: var(--bg-secondary);
+  border-radius: 16px;
+  box-shadow: var(--shadow-lg);
+  border: 1.5px solid var(--border-color);
+  animation: bounceIn 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.success-message::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, var(--accent-primary), var(--accent-info));
+}
+
+.success-message h1 {
+  color: var(--accent-primary);
+  margin-bottom: 18px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  text-shadow: 0 0 20px var(--accent-primary-light);
+}
+
+.success-message p {
+  font-size: 1.125rem;
+  color: var(--text-secondary);
+  margin-bottom: 24px;
+}
+
+.success-message button {
+  background: linear-gradient(135deg, var(--accent-primary), #0891b2);
+  color: white;
+  margin: 10px;
+  font-weight: 700;
+  border-radius: 10px;
+  border: 1.5px solid transparent;
+  box-shadow: var(--shadow);
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  letter-spacing: -0.011em;
+}
+
+.success-message button:hover {
+  background: linear-gradient(135deg, #0891b2, #0e7490);
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-lg), var(--glow-success);
+  border-color: var(--accent-primary);
+}
+
+.success-message button.secondary {
+  background: linear-gradient(135deg, var(--accent-primary), #0891b2);
+}
+
+.success-message button.secondary:hover {
+  background: linear-gradient(135deg, #0891b2, #0e7490);
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-lg), var(--glow-primary);
+  border-color: var(--accent-primary);
+}
+
+.appointments-list {
+  background: var(--bg-secondary);
+  border-radius: 12px;
+  box-shadow: 0 2px 8px var(--shadow);
+  padding: 24px;
+  border: 1px solid var(--border-color);
+}
+
+.appointments-list h1 {
+  margin-bottom: 24px;
+  color: var(--text-primary);
+}
+
+.appointments-grid {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.appointment-card {
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 16px;
+  background: var(--bg-tertiary);
+}
+
+.appointment-card p {
+  margin-bottom: 8px;
+  color: var(--text-secondary);
+}
+
+.appointment-card strong {
+  color: var(--text-primary);
+}
+
+.cancel-button {
+  background: var(--accent-red);
+  color: white;
+  width: 100%;
+  margin-top: 12px;
+}
+
+.cancel-button:hover {
+  background: var(--accent-red-hover);
+}
+
+.appointments-list > button {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+}
+
+.appointments-list > button:hover {
+  background: var(--border-color);
+}
+
+@media (max-width: 768px) {
+  .booking-page {
+    padding: 1rem;
+  }
+
+  .welcome-section,
+  .success-message {
+    padding: 2rem 1.5rem;
+  }
+
+  .welcome-section p,
+  .success-message p {
+    font-size: 1rem;
+  }
+
+  .welcome-section button,
+  .success-message button {
+    font-size: 1rem;
+    padding: 1rem 2rem;
+    width: 100%;
+  }
+
+  .booking-section {
+    padding: 1rem;
+  }
+
+  .user-info {
+    flex-direction: column;
+    gap: 1rem;
+    align-items: stretch;
+  }
+
+  .user-info button {
+    width: 100%;
+  }
+
+  .appointment-card {
+    padding: 1rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .booking-page {
+    padding: 0.5rem;
+  }
+
+  .welcome-section,
+  .success-message {
+    padding: 1.5rem 1rem;
+    border-radius: 8px;
+  }
+
+  .booking-section {
+    padding: 0.75rem;
+    border-radius: 8px;
+  }
+}
+
+/* Landscape orientation optimization */
+@media (max-height: 600px) and (orientation: landscape) {
+  .welcome-section,
+  .success-message,
+  .booking-section {
+    padding: 1rem;
+  }
+}
