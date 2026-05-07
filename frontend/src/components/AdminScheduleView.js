@@ -10,29 +10,22 @@ const AdminScheduleView = () => {
   const [selectedDate, setSelectedDate] = useState(null);
   const [slots, setSlots] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [bookedAppointments, setBookedAppointments] = useState([]);
   const [blockedSlots, setBlockedSlots] = useState([]);
   const [daysOff, setDaysOff] = useState([]);
   const [scheduleConfig, setScheduleConfig] = useState(null);
   const [editingHours, setEditingHours] = useState(false);
+  const [bookingSlot, setBookingSlot] = useState(null);
+  const [bookingForm, setBookingForm] = useState({
+    name: '',
+    phone: '+380'
+  });
+  const [bookingSubmitting, setBookingSubmitting] = useState(false);
   const [hoursForm, setHoursForm] = useState({
     start_time: '09:00',
     end_time: '18:00',
     slot_duration: 30
   });
-
-  // Find the first available date on mount
-  useEffect(() => {
-    findFirstAvailableDate();
-    loadScheduleConfig();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Find the first available date on mount
-  useEffect(() => {
-    findFirstAvailableDate();
-    loadScheduleConfig();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const loadScheduleConfig = async () => {
     try {
@@ -120,6 +113,28 @@ const AdminScheduleView = () => {
     }
   }, []);
 
+  const loadBookedAppointments = useCallback(async () => {
+    setBookedAppointments([]);
+    try {
+      const dateStr = format(selectedDate, 'yyyy-MM-dd');
+      const response = await fetch(`/api/v1/admin/appointments?from_date=${dateStr}&to_date=${dateStr}&status=booked&limit=100`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('adminToken')}`
+        }
+      });
+      if (!response.ok) {
+        console.error('Failed to load booked appointments:', response.status);
+        setBookedAppointments([]);
+        return;
+      }
+      const data = await response.json();
+      setBookedAppointments(data.items || []);
+    } catch (error) {
+      console.error('Error loading booked appointments:', error);
+      setBookedAppointments([]);
+    }
+  }, [selectedDate]);
+
   const loadDaysOff = useCallback(async () => {
     try {
       const response = await fetch('/api/v1/admin/days-off', {
@@ -152,9 +167,10 @@ const AdminScheduleView = () => {
     if (selectedDate) {
       loadSlots();
       loadBlockedSlots();
+      loadBookedAppointments();
       loadDaysOff();
     }
-  }, [selectedDate, loadSlots, loadBlockedSlots, loadDaysOff]);
+  }, [selectedDate, loadSlots, loadBlockedSlots, loadBookedAppointments, loadDaysOff]);
 
   const blockSlot = async (slot) => {
     try {
@@ -182,6 +198,60 @@ const AdminScheduleView = () => {
     } catch (error) {
       console.error('Error blocking slot:', error);
       toast.error('Помилка з\'єднання');
+    }
+  };
+
+  const openBookingForm = (slot) => {
+    setBookingSlot(slot);
+    setBookingForm({
+      name: '',
+      phone: '+380'
+    });
+  };
+
+  const closeBookingForm = (force = false) => {
+    if (bookingSubmitting && !force) return;
+    setBookingSlot(null);
+    setBookingForm({
+      name: '',
+      phone: '+380'
+    });
+  };
+
+  const createAppointment = async (e) => {
+    e.preventDefault();
+    if (!bookingSlot) return;
+
+    setBookingSubmitting(true);
+    try {
+      const response = await fetch('/api/v1/admin/appointments/create', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('adminToken')}`
+        },
+        body: JSON.stringify({
+          name: bookingForm.name.trim(),
+          phone: bookingForm.phone.trim(),
+          start_time: bookingSlot.start_time
+        })
+      });
+
+      if (response.ok) {
+        toast.success('Запис створено');
+        closeBookingForm(true);
+        loadSlots();
+        loadBookedAppointments();
+      } else {
+        const errorData = await response.json().catch(() => null);
+        const message = errorData?.detail || `Помилка створення: ${response.status}`;
+        toast.error(message);
+      }
+    } catch (error) {
+      console.error('Error creating appointment:', error);
+      toast.error('Помилка з\'єднання');
+    } finally {
+      setBookingSubmitting(false);
     }
   };
 
@@ -459,6 +529,53 @@ const AdminScheduleView = () => {
     return blocked?.id;
   };
 
+  const getDayBlockedSlots = () => {
+    if (!selectedDate) return [];
+    return blockedSlots.filter(bs => {
+      const bsDate = new Date(bs.start_time).toDateString();
+      const selDate = selectedDate.toDateString();
+      return bsDate === selDate;
+    });
+  };
+
+  const buildScheduleSlots = () => {
+    const slotMap = new Map();
+
+    slots.forEach(slot => {
+      slotMap.set(new Date(slot.start_time).getTime(), {
+        type: 'available',
+        start_time: slot.start_time,
+        end_time: slot.end_time,
+        slot
+      });
+    });
+
+    bookedAppointments.forEach(appointment => {
+      slotMap.set(new Date(appointment.start_time).getTime(), {
+        type: 'booked',
+        start_time: appointment.start_time,
+        end_time: appointment.end_time,
+        appointment
+      });
+    });
+
+    getDayBlockedSlots().forEach(blockedSlot => {
+      const key = new Date(blockedSlot.start_time).getTime();
+      if (!slotMap.has(key)) {
+        slotMap.set(key, {
+          type: 'blocked',
+          start_time: blockedSlot.start_time,
+          end_time: blockedSlot.end_time,
+          blockedSlot
+        });
+      }
+    });
+
+    return Array.from(slotMap.values()).sort(
+      (a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
+    );
+  };
+
   const tileClassName = ({ date, view }) => {
     if (view === 'month' && isDayOff(date)) {
       return 'day-off-tile';
@@ -467,6 +584,7 @@ const AdminScheduleView = () => {
   };
 
   const currentDayOff = selectedDate ? isDayOff(selectedDate) : false;
+  const scheduleSlots = buildScheduleSlots();
 
   if (!selectedDate) {
     return (
@@ -662,92 +780,116 @@ const AdminScheduleView = () => {
             <div className="slots-loading">Завантаження...</div>
           ) : (
             <>
-              {slots.length > 0 && (
+              {scheduleSlots.length > 0 && (
                 <div className="slots-grid">
-                  {slots.map((slot, index) => {
-                    const blocked = isSlotBlocked(slot);
-                    const blockedId = getSlotBlockedId(slot);
+                  {scheduleSlots.map((scheduleSlot, index) => {
+                    const blocked = scheduleSlot.type === 'blocked' || isSlotBlocked(scheduleSlot);
+                    const booked = scheduleSlot.type === 'booked';
+                    const blockedId = scheduleSlot.blockedSlot?.id || getSlotBlockedId(scheduleSlot);
+                    const appointment = scheduleSlot.appointment;
 
                     return (
                       <div
                         key={index}
-                        className={`slot-card ${blocked ? 'blocked' : 'available'}`}
+                        className={`slot-card ${booked ? 'booked' : blocked ? 'blocked' : 'available'}`}
                       >
                         <div className="slot-time">
-                          {format(new Date(slot.start_time), 'HH:mm')} - {format(new Date(slot.end_time), 'HH:mm')}
+                          {format(new Date(scheduleSlot.start_time), 'HH:mm')} - {format(new Date(scheduleSlot.end_time), 'HH:mm')}
                         </div>
                         <div className="slot-status">
-                          {blocked ? '🔒 Заблоковано' : '✓ Доступний'}
+                          {booked ? 'Заброньовано' : blocked ? 'Заблоковано' : 'Доступний'}
                         </div>
-                        <button
-                          className={`slot-action ${blocked ? 'unblock' : 'block'}`}
-                          onClick={() => blocked ? unblockSlot(blockedId) : blockSlot(slot)}
-                        >
-                          {blocked ? 'Розблокувати' : 'Заблокувати'}
-                        </button>
+                        {booked && appointment?.user && (
+                          <div className="slot-patient">
+                            <strong>{appointment.user.name}</strong>
+                            <span>{appointment.user.phone}</span>
+                            {appointment.notes && <span>{appointment.notes}</span>}
+                          </div>
+                        )}
+                        <div className="slot-actions">
+                          {!blocked && !booked && (
+                            <button
+                              className="slot-action book"
+                              onClick={() => openBookingForm(scheduleSlot)}
+                            >
+                              Записати
+                            </button>
+                          )}
+                          {!booked && (
+                            <button
+                              className={`slot-action ${blocked ? 'unblock' : 'block'}`}
+                              onClick={() => blocked ? unblockSlot(blockedId) : blockSlot(scheduleSlot)}
+                            >
+                              {blocked ? 'Розблокувати' : 'Заблокувати'}
+                            </button>
+                          )}
+                        </div>
                       </div>
                     );
                   })}
                 </div>
               )}
 
-              {/* Show blocked slots that are not in available slots */}
-              {blockedSlots.filter(bs => {
-                const bsDate = new Date(bs.start_time).toDateString();
-                const selDate = selectedDate.toDateString();
-                return bsDate === selDate;
-              }).filter(bs => {
-                // Only show blocked slots that are NOT in the available slots list
-                return !slots.some(slot =>
-                  new Date(slot.start_time).getTime() === new Date(bs.start_time).getTime()
-                );
-              }).length > 0 && (
-                <div style={{ marginTop: '1.5rem' }}>
-                  <h4 style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>
-                    🔒 Заблоковані слоти
-                  </h4>
-                  <div className="slots-grid">
-                    {blockedSlots.filter(bs => {
-                      const bsDate = new Date(bs.start_time).toDateString();
-                      const selDate = selectedDate.toDateString();
-                      return bsDate === selDate;
-                    }).filter(bs => {
-                      return !slots.some(slot =>
-                        new Date(slot.start_time).getTime() === new Date(bs.start_time).getTime()
-                      );
-                    }).map((bs, index) => (
-                      <div key={`blocked-${index}`} className="slot-card blocked">
-                        <div className="slot-time">
-                          {format(new Date(bs.start_time), 'HH:mm')} - {format(new Date(bs.end_time), 'HH:mm')}
-                        </div>
-                        <div className="slot-status">
-                          🔒 Заблоковано
-                        </div>
-                        <button
-                          className="slot-action unblock"
-                          onClick={() => unblockSlot(bs.id)}
-                        >
-                          Розблокувати
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {slots.length === 0 && blockedSlots.filter(bs => {
-                const bsDate = new Date(bs.start_time).toDateString();
-                const selDate = selectedDate.toDateString();
-                return bsDate === selDate;
-              }).length === 0 && (
+              {scheduleSlots.length === 0 && (
                 <div className="no-slots">
-                  <p>Немає доступних слотів на цю дату</p>
+                  <p>Немає слотів на цю дату</p>
                 </div>
               )}
             </>
           )}
         </div>
       </div>
+
+      {bookingSlot && (
+        <div className="appointment-modal-backdrop" onClick={() => closeBookingForm()}>
+          <form className="appointment-modal" onSubmit={createAppointment} onClick={(e) => e.stopPropagation()}>
+            <div className="appointment-modal-header">
+              <h3>Новий запис</h3>
+              <button type="button" className="modal-close" onClick={() => closeBookingForm()} aria-label="Закрити">
+                ×
+              </button>
+            </div>
+
+            <div className="appointment-slot-summary">
+              {format(new Date(bookingSlot.start_time), 'dd MMMM yyyy, HH:mm', { locale: uk })} - {format(new Date(bookingSlot.end_time), 'HH:mm')}
+            </div>
+
+            <div className="form-field">
+              <label>Ім'я пацієнта</label>
+              <input
+                type="text"
+                value={bookingForm.name}
+                onChange={(e) => setBookingForm({...bookingForm, name: e.target.value})}
+                minLength="2"
+                maxLength="100"
+                required
+                autoFocus
+              />
+            </div>
+
+            <div className="form-field">
+              <label>Телефон</label>
+              <input
+                type="tel"
+                value={bookingForm.phone}
+                onChange={(e) => setBookingForm({...bookingForm, phone: e.target.value})}
+                placeholder="+380XXXXXXXXX"
+                pattern="\+380[0-9]{9}"
+                required
+              />
+            </div>
+
+            <div className="form-actions">
+              <button type="submit" className="btn-save" disabled={bookingSubmitting}>
+                {bookingSubmitting ? 'Створення...' : 'Створити запис'}
+              </button>
+              <button type="button" onClick={() => closeBookingForm()} className="btn-cancel" disabled={bookingSubmitting}>
+                Скасувати
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 };

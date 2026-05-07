@@ -14,7 +14,7 @@ import {
   exportPDF,
   exportExcel
 } from '../services/adminService';
-import { format } from 'date-fns';
+import { addDays, format } from 'date-fns';
 import { uk } from 'date-fns/locale';
 import { toast } from 'react-toastify';
 import SearchBar from '../components/SearchBar';
@@ -26,6 +26,11 @@ import { getAdminToken, saveAdminSession } from '../utils/storage';
 import '../styles/AdminPage.css';
 
 const AdminPage = ({ onLogout }) => {
+  const getDefaultReportDates = () => ({
+    from: format(new Date(), 'yyyy-MM-dd'),
+    to: format(addDays(new Date(), 1), 'yyyy-MM-dd')
+  });
+
   const [adminPhone, setAdminPhone] = useState('');
   const [authenticated, setAuthenticated] = useState(() => !!getAdminToken());
   const [phone, setPhone] = useState('');
@@ -58,6 +63,8 @@ const AdminPage = ({ onLogout }) => {
   const [filterToDate, setFilterToDate] = useState('');
   const [filterStatus] = useState('');
   const [searchQuery] = useState('');
+  const [reportFromDate, setReportFromDate] = useState(() => getDefaultReportDates().from);
+  const [reportToDate, setReportToDate] = useState(() => getDefaultReportDates().to);
 
   // Filters for users
   const [userSearchQuery, setUserSearchQuery] = useState('');
@@ -288,13 +295,13 @@ const AdminPage = ({ onLogout }) => {
   };
 
   const handleGenerateReport = async () => {
-    if (!filterFromDate || !filterToDate) {
+    if (!reportFromDate || !reportToDate) {
       toast.error('Виберіть діапазон дат');
       return;
     }
 
     try {
-      const data = await generateReport(filterFromDate, filterToDate);
+      const data = await generateReport(reportFromDate, reportToDate);
       const newWindow = window.open();
       newWindow.document.write(data.html);
     } catch (error) {
@@ -303,17 +310,17 @@ const AdminPage = ({ onLogout }) => {
   };
 
   const handleExportPDF = async () => {
-    if (!filterFromDate || !filterToDate) {
+    if (!reportFromDate || !reportToDate) {
       toast.error('Виберіть діапазон дат');
       return;
     }
 
     try {
-      const blob = await exportPDF(filterFromDate, filterToDate);
+      const blob = await exportPDF(reportFromDate, reportToDate);
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `appointments_${filterFromDate}_${filterToDate}.pdf`;
+      link.download = `appointments_${reportFromDate}_${reportToDate}.pdf`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -325,17 +332,17 @@ const AdminPage = ({ onLogout }) => {
   };
 
   const handleExportExcel = async () => {
-    if (!filterFromDate || !filterToDate) {
+    if (!reportFromDate || !reportToDate) {
       toast.error('Виберіть діапазон дат');
       return;
     }
 
     try {
-      const blob = await exportExcel(filterFromDate, filterToDate);
+      const blob = await exportExcel(reportFromDate, reportToDate);
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `appointments_${filterFromDate}_${filterToDate}.xlsx`;
+      link.download = `appointments_${reportFromDate}_${reportToDate}.xlsx`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -665,8 +672,8 @@ const AdminPage = ({ onLogout }) => {
               <label>Від</label>
               <input
                 type="date"
-                value={filterFromDate}
-                onChange={(e) => setFilterFromDate(e.target.value)}
+                value={reportFromDate}
+                onChange={(e) => setReportFromDate(e.target.value)}
                 required
               />
             </div>
@@ -675,8 +682,8 @@ const AdminPage = ({ onLogout }) => {
               <label>До</label>
               <input
                 type="date"
-                value={filterToDate}
-                onChange={(e) => setFilterToDate(e.target.value)}
+                value={reportToDate}
+                onChange={(e) => setReportToDate(e.target.value)}
                 required
               />
             </div>

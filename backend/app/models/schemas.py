@@ -99,6 +99,31 @@ class AppointmentCreate(BaseModel):
     start_time: datetime
 
 
+class AdminAppointmentCreate(BaseModel):
+    phone: str
+    name: str
+    start_time: datetime
+    notes: Optional[str] = None
+
+    @field_validator("phone")
+    def validate_phone(cls, v):
+        if not v.startswith("+380"):
+            raise ValueError("Номер телефону повинен починатися з +380")
+        if not re.match(r"^\+380\d{9}$", v):
+            raise ValueError("Невірний формат номера телефону")
+        return v
+
+    @field_validator("name")
+    def validate_name(cls, v):
+        if not v or len(v.strip()) < 2:
+            raise ValueError("Ім'я повинно містити хоча б 2 символи")
+        if len(v) > 100:
+            raise ValueError("Ім'я надто довге (максимум 100 символів)")
+        if not re.match(r'^[a-zA-Zа-яА-ЯіІїЇєЄґҐ\s\-\']+$', v):
+            raise ValueError("Ім'я може містити тільки літери, пробіли, дефіси та апострофи")
+        return v.strip()
+
+
 class AppointmentResponse(BaseModel):
     id: int
     user_id: int

@@ -1,5 +1,5 @@
 from io import BytesIO
-from datetime import datetime
+from datetime import datetime, date
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -9,14 +9,57 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill
-from typing import List
+from typing import List, Optional
+
+
+MISSING_BIRTHDATE = date(1900, 1, 1)
 
 
 class ReportGenerator:
     """Generate reports in PDF and Excel formats"""
 
     @staticmethod
-    def generate_pdf_report(appointments: List, from_date: str, to_date: str) -> BytesIO:
+    def _format_birthdate_and_age(user):
+        if not user.birthdate or user.birthdate == MISSING_BIRTHDATE:
+            return "", ""
+
+        age = (datetime.now().date() - user.birthdate).days // 365
+        return user.birthdate.strftime('%d.%m.%Y'), f"{age} р."
+
+    @staticmethod
+    def _build_report_rows(appointments: List, free_slots: Optional[List] = None):
+        rows = [
+            {
+                "type": "appointment",
+                "appointment": appointment,
+                "start_time": appointment.start_time,
+                "end_time": appointment.end_time
+            }
+            for appointment in appointments
+        ]
+        rows.extend(
+            {
+                "type": "free_slot",
+                "slot": slot,
+                "start_time": slot.start_time,
+                "end_time": slot.end_time
+            }
+            for slot in (free_slots or [])
+        )
+        rows.sort(key=lambda row: (row["start_time"], 0 if row["type"] == "appointment" else 1))
+        return rows
+
+    @staticmethod
+    def _format_day_separator(value: datetime) -> str:
+        return value.strftime('%d.%m.%Y')
+
+    @staticmethod
+    def generate_pdf_report(
+        appointments: List,
+        from_date: str,
+        to_date: str,
+        free_slots: Optional[List] = None
+    ) -> BytesIO:
         """Generate enhanced PDF report for appointments"""
 
         # Register fonts with Cyrillic support
@@ -131,17 +174,44 @@ class ReportGenerator:
         # Table data with more details
         data = [['№', 'Дата та час', 'Пацієнт', 'Телефон', 'Дата народж.', 'Вік', 'Нотатки']]
 
-        for idx, appointment in enumerate(appointments, 1):
+        current_day = None
+        item_number = 0
+        day_separator_rows = []
+
+        for row_item in ReportGenerator._build_report_rows(appointments, free_slots):
+            start_time = row_item["start_time"]
+            row_day = start_time.date()
+            if row_day != current_day:
+                current_day = row_day
+                day_separator_rows.append(len(data))
+                data.append([ReportGenerator._format_day_separator(start_time), '', '', '', '', '', ''])
+
+            item_number += 1
+            if row_item["type"] == "free_slot":
+                end_time = row_item["end_time"]
+                row = [
+                    str(item_number),
+                    f"{start_time.strftime('%d.%m.%Y')}\n{start_time.strftime('%H:%M')}-{end_time.strftime('%H:%M')}",
+                    "",
+                    "",
+                    "",
+                    "",
+                    ""
+                ]
+                data.append(row)
+                continue
+
+            appointment = row_item["appointment"]
             user = appointment.user
-            age = (datetime.now().date() - user.birthdate).days // 365
+            birthdate_text, age_text = ReportGenerator._format_birthdate_and_age(user)
 
             row = [
-                str(idx),
+                str(item_number),
                 f"{appointment.start_time.strftime('%d.%m.%Y')}\n{appointment.start_time.strftime('%H:%M')}-{appointment.end_time.strftime('%H:%M')}",
                 user.name,
                 user.phone,
-                user.birthdate.strftime('%d.%m.%Y'),
-                f"{age} р.",
+                birthdate_text,
+                age_text,
                 (appointment.notes or user.notes or '-')[:50]
             ]
             data.append(row)
@@ -176,6 +246,20 @@ class ReportGenerator:
             ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f8fafc')])
         ]
 
+        for row_idx in day_separator_rows:
+            table_style.extend([
+                ('SPAN', (0, row_idx), (-1, row_idx)),
+                ('BACKGROUND', (0, row_idx), (-1, row_idx), colors.HexColor('#e0f2fe')),
+                ('TEXTCOLOR', (0, row_idx), (-1, row_idx), colors.HexColor('#0c4a6e')),
+                ('FONTNAME', (0, row_idx), (-1, row_idx), font_name_bold),
+                ('FONTSIZE', (0, row_idx), (-1, row_idx), 9),
+                ('ALIGN', (0, row_idx), (-1, row_idx), 'LEFT'),
+                ('TOPPADDING', (0, row_idx), (-1, row_idx), 7),
+                ('BOTTOMPADDING', (0, row_idx), (-1, row_idx), 7),
+                ('LINEABOVE', (0, row_idx), (-1, row_idx), 1, colors.HexColor('#06b6d4')),
+                ('LINEBELOW', (0, row_idx), (-1, row_idx), 0.5, colors.HexColor('#bae6fd')),
+            ])
+
         table.setStyle(TableStyle(table_style))
         elements.append(table)
 
@@ -198,7 +282,12 @@ class ReportGenerator:
         return buffer
 
     @staticmethod
-    def generate_excel_report(appointments: List, from_date: str, to_date: str) -> BytesIO:
+    def generate_excel_report(
+        appointments: List,
+        from_date: str,
+        to_date: str,
+        free_slots: Optional[List] = None
+    ) -> BytesIO:
         """Generate enhanced Excel report for appointments"""
         buffer = BytesIO()
         wb = Workbook()
@@ -279,22 +368,60 @@ class ReportGenerator:
         ws.row_dimensions[8].height = 25
 
         # Data rows
-        for row_idx, appointment in enumerate(appointments, start=9):
-            user = appointment.user
-            age = (datetime.now().date() - user.birthdate).days // 365
+        report_rows = ReportGenerator._build_report_rows(appointments, free_slots)
+        row_idx = 9
+        item_number = 0
+        current_day = None
+        max_report_col = 9
 
-            # Row data
-            row_data = [
-                row_idx - 8,  # Number
-                appointment.start_time.strftime('%d.%m.%Y'),
-                f"{appointment.start_time.strftime('%H:%M')}-{appointment.end_time.strftime('%H:%M')}",
-                user.name,
-                user.phone,
-                user.birthdate.strftime('%d.%m.%Y'),
-                f"{age} р.",
-                appointment.notes or '-',
-                user.notes or '-'
-            ]
+        for row_item in report_rows:
+            start_time = row_item["start_time"]
+            row_day = start_time.date()
+            if row_day != current_day:
+                current_day = row_day
+                ws.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=max_report_col)
+                separator_cell = ws.cell(row=row_idx, column=1)
+                separator_fill = PatternFill(start_color="e0f2fe", end_color="e0f2fe", fill_type="solid")
+                separator_cell.value = ReportGenerator._format_day_separator(start_time)
+                separator_cell.fill = separator_fill
+                separator_cell.font = Font(bold=True, color="0c4a6e", size=11)
+                separator_cell.alignment = Alignment(horizontal='left', vertical='center')
+                for col in range(1, max_report_col + 1):
+                    ws.cell(row=row_idx, column=col).fill = separator_fill
+                ws.row_dimensions[row_idx].height = 22
+                row_idx += 1
+
+            item_number += 1
+            if row_item["type"] == "free_slot":
+                end_time = row_item["end_time"]
+                row_data = [
+                    item_number,
+                    start_time.strftime('%d.%m.%Y'),
+                    f"{start_time.strftime('%H:%M')}-{end_time.strftime('%H:%M')}",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    ""
+                ]
+            else:
+                appointment = row_item["appointment"]
+                user = appointment.user
+                birthdate_text, age_text = ReportGenerator._format_birthdate_and_age(user)
+
+                # Row data
+                row_data = [
+                    item_number,
+                    appointment.start_time.strftime('%d.%m.%Y'),
+                    f"{appointment.start_time.strftime('%H:%M')}-{appointment.end_time.strftime('%H:%M')}",
+                    user.name,
+                    user.phone,
+                    birthdate_text,
+                    age_text,
+                    appointment.notes or '-',
+                    user.notes or '-'
+                ]
 
             for col_idx, value in enumerate(row_data, start=1):
                 cell = ws.cell(row=row_idx, column=col_idx)
@@ -303,12 +430,13 @@ class ReportGenerator:
                 cell.font = Font(size=10, color="1e293b")
 
             # Alternating row colors
-            if (row_idx - 9) % 2 == 1:
+            if item_number % 2 == 0:
                 fill = PatternFill(start_color="f8fafc", end_color="f8fafc", fill_type="solid")
-                for col in range(1, 10):
+                for col in range(1, max_report_col + 1):
                     ws.cell(row=row_idx, column=col).fill = fill
 
             ws.row_dimensions[row_idx].height = 20
+            row_idx += 1
 
         # Column widths
         ws.column_dimensions['A'].width = 5
@@ -323,7 +451,7 @@ class ReportGenerator:
         ws.column_dimensions['J'].width = 30
 
         # Footer
-        last_row = len(appointments) + 10
+        last_row = row_idx + 1
         ws.merge_cells(f'A{last_row}:J{last_row}')
         footer_cell = ws[f'A{last_row}']
         footer_cell.value = f"Згенеровано: {datetime.now().strftime('%d.%m.%Y о %H:%M')} | Медичний центр - Система управління записами"

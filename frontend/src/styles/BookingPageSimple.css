@@ -89,6 +89,26 @@
   transform: translateY(-2px);
 }
 
+.birthdate-input-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.birthdate-calendar-icon {
+  position: absolute;
+  left: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 1rem;
+  line-height: 1;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.birthdate-input {
+  padding-left: 2.75rem;
+}
+
 .otp-hint {
   font-size: 0.9rem;
   color: var(--text-tertiary);

@@ -17,7 +17,8 @@ class SlotService:
         self,
         db: Session,
         from_date: date,
-        to_date: date
+        to_date: date,
+        include_past: bool = False
     ) -> List[TimeSlot]:
         """Generate available time slots based on schedule configuration"""
 
@@ -62,7 +63,8 @@ class SlotService:
                         current_date,
                         schedule,
                         blocked_slots,
-                        existing_bookings
+                        existing_bookings,
+                        include_past
                     )
                     available_slots.extend(day_slots)
 
@@ -75,7 +77,8 @@ class SlotService:
         date: date,
         schedule: ScheduleConfig,
         blocked_slots: List[BlockedSlot],
-        existing_bookings: List[Appointment]
+        existing_bookings: List[Appointment],
+        include_past: bool = False
     ) -> List[TimeSlot]:
         """Generate time slots for a specific day"""
         slots = []
@@ -92,7 +95,7 @@ class SlotService:
             slot_end = current_time + slot_duration
 
             # Skip slots that have already passed (for today only)
-            if date == datetime.now(self.tz).date() and slot_end <= now:
+            if not include_past and date == datetime.now(self.tz).date() and slot_end <= now:
                 current_time = slot_end
                 continue
 
@@ -174,15 +177,16 @@ class SlotService:
 
         # Check if slot is blocked
         blocked = db.query(BlockedSlot).filter(
-            BlockedSlot.start_time <= start_time,
-            BlockedSlot.end_time >= end_time
+            BlockedSlot.start_time < end_time,
+            BlockedSlot.end_time > start_time
         ).first()
         if blocked:
             return False
 
         # Check if slot is already booked
         booking = db.query(Appointment).filter(
-            Appointment.start_time == start_time,
+            Appointment.start_time < end_time,
+            Appointment.end_time > start_time,
             Appointment.status == AppointmentStatus.BOOKED
         ).first()
         if booking:

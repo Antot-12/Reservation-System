@@ -4,21 +4,26 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from datetime import datetime, timedelta, date
 from typing import List, Optional
+from html import escape
 from app.core.database import get_db
 from app.models.schemas import (
     SendOTPRequest, VerifyOTPRequest, SessionResponse,
     ScheduleConfigCreate, ScheduleConfigResponse,
     DayOffCreate, DayOffResponse,
     BlockedSlotCreate, BlockedSlotResponse,
-    AppointmentResponse, AppointmentUpdateRequest,
+    AdminAppointmentCreate, AppointmentResponse, AppointmentUpdateRequest,
     UserNoteRequest, BlacklistRequest, UserResponse,
     DashboardStats, AuditLogResponse
 )
 from app.models.models import (
-    User, Appointment, ScheduleConfig, DayOff, BlockedSlot, OTPCode, AuditLog
+    User, Appointment, AppointmentStatus, ScheduleConfig, DayOff, BlockedSlot, OTPCode, AuditLog
 )
 from app.services.otp_service import otp_service
 from app.services.audit_log_service import audit_log_service
+from app.services.slot_service import slot_service
+from app.core.cache import invalidate_slots_cache
+from app.core.monitoring import track_appointment_created, track_user_registered
+from app.core.websocket import manager
 from app.core.config import settings
 from app.utils.report_generator import ReportGenerator
 from jose import jwt
@@ -28,6 +33,15 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 SECRET_KEY = settings.SECRET_KEY
 ALGORITHM = "HS256"
+MISSING_BIRTHDATE = date(1900, 1, 1)
+
+
+def format_report_birthdate_and_age(user: User):
+    if not user.birthdate or user.birthdate == MISSING_BIRTHDATE:
+        return "", ""
+
+    age = (datetime.now().date() - user.birthdate).days // 365
+    return user.birthdate.strftime('%d.%m.%Y'), f"{age} років"
 
 
 @router.get("/phone")
@@ -247,6 +261,70 @@ def update_appointment(
     )
 
     return {"message": "Запис оновлено"}
+
+
+@router.post("/appointments/create", response_model=AppointmentResponse)
+async def admin_create_appointment(
+    request: AdminAppointmentCreate,
+    req: Request,
+    phone: str = Depends(verify_admin_session),
+    db: Session = Depends(get_db)
+):
+    """Create an appointment from the admin panel without user OTP."""
+
+    if not slot_service.validate_slot_available(db, request.start_time):
+        raise HTTPException(status_code=400, detail="Цей час вже зайнято")
+
+    schedule = db.query(ScheduleConfig).first()
+    if not schedule:
+        raise HTTPException(status_code=500, detail="Розклад не налаштовано")
+
+    user = db.query(User).filter(User.phone == request.phone).first()
+    if user:
+        if user.is_blacklisted:
+            raise HTTPException(status_code=403, detail="Користувач у чорному списку")
+        user.name = request.name
+    else:
+        user = User(
+            phone=request.phone,
+            name=request.name,
+            birthdate=date(1900, 1, 1)
+        )
+        db.add(user)
+        db.flush()
+        track_user_registered()
+
+    appointment = Appointment(
+        user_id=user.id,
+        start_time=request.start_time,
+        end_time=request.start_time + timedelta(minutes=schedule.slot_duration),
+        status=AppointmentStatus.BOOKED,
+        notes=request.notes
+    )
+    db.add(appointment)
+    db.commit()
+    db.refresh(appointment)
+
+    track_appointment_created()
+    invalidate_slots_cache()
+    audit_log_service.log_action(
+        db=db,
+        admin_phone=phone,
+        action="create_appointment",
+        entity_type="appointment",
+        entity_id=appointment.id,
+        details={
+            "user_id": user.id,
+            "start_time": str(appointment.start_time),
+            "created_from": "admin_schedule"
+        },
+        ip_address=req.client.host if req.client else None,
+        user_agent=req.headers.get("user-agent")
+    )
+    await manager.notify_appointment_created({"id": appointment.id, "start_time": str(appointment.start_time)})
+    await manager.notify_slots_updated()
+
+    return appointment
 
 
 @router.post("/appointments/cancel")
@@ -646,6 +724,14 @@ def generate_report(
         Appointment.start_time >= datetime.combine(from_date, datetime.min.time()),
         Appointment.start_time <= datetime.combine(to_date, datetime.max.time())
     ).order_by(Appointment.start_time).all()
+    free_slots = slot_service.get_available_slots(db, from_date, to_date, include_past=True)
+    report_rows = (
+        [{"type": "appointment", "appointment": appointment, "start_time": appointment.start_time, "end_time": appointment.end_time}
+         for appointment in appointments] +
+        [{"type": "free_slot", "slot": slot, "start_time": slot.start_time, "end_time": slot.end_time}
+         for slot in free_slots]
+    )
+    report_rows.sort(key=lambda row: (row["start_time"], 0 if row["type"] == "appointment" else 1))
 
     # Calculate statistics
     total_appointments = len(appointments)
@@ -802,6 +888,17 @@ def generate_report(
                 background: #1e293b;
             }}
 
+            .day-separator td {{
+                background: #0e7490;
+                color: white;
+                font-weight: 800;
+                letter-spacing: 0.04em;
+                text-transform: uppercase;
+                border-top: 2px solid #67e8f9;
+                border-bottom: 2px solid #67e8f9;
+                padding: 0.75rem 1rem;
+            }}
+
             .status-badge {{
                 display: inline-block;
                 padding: 0.35rem 0.75rem;
@@ -953,6 +1050,13 @@ def generate_report(
 
                 tbody tr:hover {{
                     background: white !important;
+                }}
+
+                .day-separator td {{
+                    background: #e0f2fe !important;
+                    color: #0c4a6e !important;
+                    border-top: 2px solid #06b6d4 !important;
+                    border-bottom: 1px solid #bae6fd !important;
                 }}
 
                 td {{
@@ -1174,20 +1278,51 @@ def generate_report(
                         <tbody>
     """
 
-    for idx, appointment in enumerate(appointments, 1):
+    current_day = None
+    item_number = 0
+
+    for row in report_rows:
+        start_time = row["start_time"]
+        row_day = start_time.date()
+        if row_day != current_day:
+            current_day = row_day
+            html += f"""
+                            <tr class="day-separator">
+                                <td colspan="8">{start_time.strftime('%d.%m.%Y')}</td>
+                            </tr>
+        """
+
+        item_number += 1
+        if row["type"] == "free_slot":
+            end_time = row["end_time"]
+            html += f"""
+                            <tr>
+                                <td><strong>{item_number}</strong></td>
+                                <td><strong>{start_time.strftime('%d.%m.%Y')}</strong><br>{start_time.strftime('%H:%M')} - {end_time.strftime('%H:%M')}</td>
+                                <td></td>
+                                <td></td>
+                                <td></td>
+                                <td></td>
+                                <td></td>
+                                <td></td>
+                            </tr>
+        """
+            continue
+
+        appointment = row["appointment"]
         user = appointment.user
-        age = (datetime.now().date() - user.birthdate).days // 365
+        birthdate_text, age_text = format_report_birthdate_and_age(user)
 
         html += f"""
                             <tr>
-                                <td><strong>{idx}</strong></td>
+                                <td><strong>{item_number}</strong></td>
                                 <td><strong>{appointment.start_time.strftime('%d.%m.%Y')}</strong><br>{appointment.start_time.strftime('%H:%M')} - {appointment.end_time.strftime('%H:%M')}</td>
-                                <td><strong>{user.name}</strong></td>
-                                <td>{user.phone}</td>
-                                <td>{user.birthdate.strftime('%d.%m.%Y')}</td>
-                                <td>{age} років</td>
-                                <td>{appointment.notes or '-'}</td>
-                                <td>{user.notes or '-'}</td>
+                                <td><strong>{escape(user.name)}</strong></td>
+                                <td>{escape(user.phone)}</td>
+                                <td>{birthdate_text}</td>
+                                <td>{age_text}</td>
+                                <td>{escape(appointment.notes) if appointment.notes else '-'}</td>
+                                <td>{escape(user.notes) if user.notes else '-'}</td>
                             </tr>
         """
 
@@ -1318,6 +1453,7 @@ def export_appointments_pdf(
         Appointment.start_time >= datetime.combine(from_date, datetime.min.time()),
         Appointment.start_time <= datetime.combine(to_date, datetime.max.time())
     ).order_by(Appointment.start_time).all()
+    free_slots = slot_service.get_available_slots(db, from_date, to_date, include_past=True)
 
     # Load user relationships
     for appointment in appointments:
@@ -1327,7 +1463,8 @@ def export_appointments_pdf(
     pdf_buffer = ReportGenerator.generate_pdf_report(
         appointments,
         from_date.strftime('%d.%m.%Y'),
-        to_date.strftime('%d.%m.%Y')
+        to_date.strftime('%d.%m.%Y'),
+        free_slots
     )
 
     filename = f"appointments_{from_date.strftime('%Y%m%d')}_{to_date.strftime('%Y%m%d')}.pdf"
@@ -1352,6 +1489,7 @@ def export_appointments_excel(
         Appointment.start_time >= datetime.combine(from_date, datetime.min.time()),
         Appointment.start_time <= datetime.combine(to_date, datetime.max.time())
     ).order_by(Appointment.start_time).all()
+    free_slots = slot_service.get_available_slots(db, from_date, to_date, include_past=True)
 
     # Load user relationships
     for appointment in appointments:
@@ -1361,7 +1499,8 @@ def export_appointments_excel(
     excel_buffer = ReportGenerator.generate_excel_report(
         appointments,
         from_date.strftime('%d.%m.%Y'),
-        to_date.strftime('%d.%m.%Y')
+        to_date.strftime('%d.%m.%Y'),
+        free_slots
     )
 
     filename = f"appointments_{from_date.strftime('%Y%m%d')}_{to_date.strftime('%Y%m%d')}.xlsx"

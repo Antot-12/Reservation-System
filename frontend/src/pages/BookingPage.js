@@ -373,14 +373,17 @@ const BookingPage = ({ onUserVerified }) => {
                     className="phone-input"
                     required
                   />
-                  <input
-                    type="date"
-                    placeholder="Дата народження"
-                    value={profileBirthdate}
-                    onChange={(e) => setProfileBirthdate(e.target.value)}
-                    className="phone-input"
-                    required
-                  />
+                  <div className="birthdate-input-wrapper">
+                    <span className="birthdate-calendar-icon" aria-hidden="true">📅</span>
+                    <input
+                      type="date"
+                      placeholder="Дата народження"
+                      value={profileBirthdate}
+                      onChange={(e) => setProfileBirthdate(e.target.value)}
+                      className="phone-input birthdate-input"
+                      required
+                    />
+                  </div>
                   <button
                     type="submit"
                     disabled={profileLoading}
