@@ -60,6 +60,9 @@ const AdminScheduleView = () => {
           const data = await response.json();
           if (data && data.length > 0) {
             setSelectedDate(checkDate);
+            // Store the slots we just fetched to avoid refetching
+            setSlots(data);
+            setLoading(false);
             return;
           }
         }
@@ -162,15 +165,17 @@ const AdminScheduleView = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Reload data when selected date changes
+  // Reload data when selected date changes (skip slots if we already have them from findFirstAvailableDate)
   useEffect(() => {
     if (selectedDate) {
-      loadSlots();
+      if (slots.length === 0 && !loading) {
+        loadSlots();
+      }
       loadBlockedSlots();
       loadBookedAppointments();
       loadDaysOff();
     }
-  }, [selectedDate, loadSlots, loadBlockedSlots, loadBookedAppointments, loadDaysOff]);
+  }, [selectedDate, slots.length, loading, loadSlots, loadBlockedSlots, loadBookedAppointments, loadDaysOff]);
 
   const blockSlot = async (slot) => {
     try {
@@ -681,7 +686,10 @@ const AdminScheduleView = () => {
         <div className="calendar-section">
           <div className="calendar-wrapper">
             <Calendar
-              onChange={setSelectedDate}
+              onChange={(date) => {
+                setSelectedDate(date);
+                setSlots([]); // Clear slots to trigger fresh load for manually selected date
+              }}
               value={selectedDate}
               locale="uk-UA"
               tileClassName={tileClassName}

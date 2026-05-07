@@ -1,14 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  getAdminPhone,
-  sendAdminOTP,
-  verifyAdminOTP,
+  adminLogin,
   getAllAppointments,
   updateAppointment,
   cancelAppointmentAdmin,
   deleteAppointment,
   getAllUsers,
   updateBlacklist,
+  updateUserNotes,
   generateReport,
   getDashboardStats,
   exportPDF,
@@ -31,11 +30,9 @@ const AdminPage = ({ onLogout }) => {
     to: format(addDays(new Date(), 1), 'yyyy-MM-dd')
   });
 
-  const [adminPhone, setAdminPhone] = useState('');
   const [authenticated, setAuthenticated] = useState(() => !!getAdminToken());
-  const [phone, setPhone] = useState('');
-  const [otpSent, setOtpSent] = useState(false);
-  const [otpCode, setOtpCode] = useState('');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
   // Admin data
@@ -129,21 +126,6 @@ const AdminPage = ({ onLogout }) => {
     }
   }, [loadDashboardStats, loadAppointments, loadUsers]);
 
-  // Fetch admin phone from backend
-  useEffect(() => {
-    const fetchAdminPhone = async () => {
-      try {
-        const phone = await getAdminPhone();
-        setAdminPhone(phone);
-      } catch (error) {
-        console.error('Failed to fetch admin phone');
-      }
-    };
-    if (!authenticated) {
-      fetchAdminPhone();
-    }
-  }, [authenticated]);
-
   useEffect(() => {
     if (authenticated && activeTab === 'appointments') {
       setAppointmentsPage(1);
@@ -170,44 +152,21 @@ const AdminPage = ({ onLogout }) => {
     }
   }, [usersPage, usersPageSize, authenticated, activeTab, loadUsers]);
 
-  const handleSendOTP = async (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
 
-    // Check if entered phone matches hardcoded admin phone
-    if (phone !== adminPhone) {
-      toast.error('Невірний номер адміністратора');
+    if (!username || !password) {
+      toast.error('Введіть логін та пароль');
       return;
     }
 
     setLoading(true);
 
     try {
-      await sendAdminOTP(adminPhone);
-      setOtpSent(true);
-      toast.success('Код підтвердження надіслано в Telegram');
-    } catch (error) {
-      toast.error('Помилка відправки коду');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleVerifyOTP = async (e) => {
-    e.preventDefault();
-
-    if (!otpCode || otpCode.length !== 6) {
-      toast.error('Введіть 6-значний код');
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      const result = await verifyAdminOTP(adminPhone, otpCode);
+      const result = await adminLogin(username, password);
 
       if (result.session_token) {
-        saveAdminSession(adminPhone, result.session_token);
-
+        saveAdminSession(username, result.session_token);
         setAuthenticated(true);
         toast.success('Вхід виконано');
 
@@ -215,10 +174,10 @@ const AdminPage = ({ onLogout }) => {
         loadAppointments();
         loadUsers();
       } else {
-        toast.error('Невірний код підтвердження');
+        toast.error('Помилка входу');
       }
     } catch (error) {
-      toast.error('Помилка верифікації');
+      toast.error('Невірний логін або пароль');
     } finally {
       setLoading(false);
     }
@@ -294,6 +253,20 @@ const AdminPage = ({ onLogout }) => {
     }
   };
 
+  const handleUpdateUserNotes = async (userId, notes) => {
+    try {
+      await updateUserNotes(userId, notes);
+      toast.success('Нотатки пацієнта оновлено');
+      // Update local state
+      setUsers(users.map(u => u.id === userId ? { ...u, notes } : u));
+      if (selectedUser && selectedUser.id === userId) {
+        setSelectedUser({ ...selectedUser, notes });
+      }
+    } catch (error) {
+      toast.error('Помилка оновлення нотаток');
+    }
+  };
+
   const handleGenerateReport = async () => {
     if (!reportFromDate || !reportToDate) {
       toast.error('Виберіть діапазон дат');
@@ -360,60 +333,32 @@ const AdminPage = ({ onLogout }) => {
           <h1>Адмін-панель</h1>
         </header>
         <div className="admin-login">
-          {!otpSent ? (
-            <form onSubmit={handleSendOTP}>
-              <div className="form-group">
-                <label>Номер телефону адміністратора</label>
-                <input
-                  type="tel"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value.replace(/\s/g, ''))}
-                  placeholder="+380501234567"
-                  required
-                />
-              </div>
-              <button type="submit" disabled={loading}>
-                {loading ? 'Відправка...' : 'Отримати код'}
-              </button>
-            </form>
-          ) : (
-            <form onSubmit={handleVerifyOTP}>
-              <div className="form-group">
-                <label>Введіть код з Telegram</label>
-                <input
-                  type="text"
-                  value={otpCode}
-                  onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                  placeholder="000000"
-                  maxLength={6}
-                  required
-                  autoFocus
-                />
-                <p className="otp-hint">
-                  Код надіслано на номер {adminPhone}
-                </p>
-                <p className="telegram-hint">
-                  💬 Код приходить через{' '}
-                  <a href="https://t.me/Toka_12_bot" target="_blank" rel="noopener noreferrer" className="telegram-link">
-                    Telegram Bot @Toka_12_bot
-                  </a>
-                </p>
-              </div>
-              <button type="submit" disabled={loading}>
-                {loading ? 'Перевірка...' : 'Увійти'}
-              </button>
-              <button
-                type="button"
-                className="btn-secondary"
-                onClick={() => {
-                  setOtpSent(false);
-                  setOtpCode('');
-                }}
-              >
-                ← Змінити номер
-              </button>
-            </form>
-          )}
+          <form onSubmit={handleLogin}>
+            <div className="form-group">
+              <label>Логін</label>
+              <input
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="Введіть логін"
+                required
+                autoFocus
+              />
+            </div>
+            <div className="form-group">
+              <label>Пароль</label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Введіть пароль"
+                required
+              />
+            </div>
+            <button type="submit" disabled={loading}>
+              {loading ? 'Вхід...' : 'Увійти'}
+            </button>
+          </form>
         </div>
       </div>
     );
@@ -421,25 +366,26 @@ const AdminPage = ({ onLogout }) => {
 
   return (
     <div className="admin-page">
-      <div className="admin-tabs">
-        <button
-          className={activeTab === 'schedule' ? 'active' : ''}
-          onClick={() => setActiveTab('schedule')}
-        >
-          Налаштування
-        </button>
-        <button
-          className={activeTab === 'appointments' ? 'active' : ''}
-          onClick={() => setActiveTab('appointments')}
-        >
-          Записи
-        </button>
-        <button
-          className={activeTab === 'dashboard' ? 'active' : ''}
-          onClick={() => setActiveTab('dashboard')}
-        >
-          Статистика
-        </button>
+      <div className="admin-header">
+        <div className="admin-tabs">
+          <button
+            className={activeTab === 'schedule' ? 'active' : ''}
+            onClick={() => setActiveTab('schedule')}
+          >
+            Налаштування
+          </button>
+          <button
+            className={activeTab === 'appointments' ? 'active' : ''}
+            onClick={() => setActiveTab('appointments')}
+          >
+            Записи
+          </button>
+          <button
+            className={activeTab === 'dashboard' ? 'active' : ''}
+            onClick={() => setActiveTab('dashboard')}
+          >
+            Статистика
+          </button>
         <button
           className={activeTab === 'users' ? 'active' : ''}
           onClick={() => setActiveTab('users')}
@@ -452,6 +398,7 @@ const AdminPage = ({ onLogout }) => {
         >
           Роздрукувати розклад
         </button>
+        </div>
       </div>
 
       {activeTab === 'dashboard' && (
@@ -554,7 +501,12 @@ const AdminPage = ({ onLogout }) => {
                       onClick={() => loadUserAppointments(user.id)}
                     >
                       <div className="user-info">
-                        <p className="user-name"><strong>{user.name}</strong></p>
+                        <div className="user-name-row">
+                          <p className="user-name"><strong>{user.name}</strong></p>
+                          {user.notes && user.notes.trim() && (
+                            <span className="user-has-notes" title={user.notes}>📝</span>
+                          )}
+                        </div>
                         <p className="user-phone">{user.phone}</p>
                         <p className="user-birthdate">
                           {format(new Date(user.birthdate), 'dd.MM.yyyy')}
@@ -586,25 +538,67 @@ const AdminPage = ({ onLogout }) => {
             {selectedUser ? (
               <>
                 <div className="selected-user-header">
-                  <h2>{selectedUser.name}</h2>
-                  <p>{selectedUser.phone}</p>
-                  <p>Дата народження: {format(new Date(selectedUser.birthdate), 'dd.MM.yyyy')}</p>
-                  {selectedUser.is_blacklisted ? (
-                    <>
-                      <span className="user-status-banned">🚫 Заблоковано</span>
-                      <p style={{ fontSize: '0.85rem', color: 'var(--text-tertiary)', marginTop: '0.5rem' }}>
-                        Заблокований користувач не може створювати нові записи
-                      </p>
-                    </>
-                  ) : (
-                    <span className="user-status-active">✅ Активний</span>
-                  )}
-                  <button
-                    onClick={() => handleToggleBlacklist(selectedUser.id, selectedUser.is_blacklisted)}
-                    className={selectedUser.is_blacklisted ? 'btn-unban-user' : 'btn-ban-user'}
-                  >
-                    {selectedUser.is_blacklisted ? '✓ Розблокувати' : '🚫 Заблокувати'}
-                  </button>
+                  <div className="user-header-card">
+                    <div className="user-main-info">
+                      <div className="user-avatar">
+                        <span className="avatar-icon">👤</span>
+                      </div>
+                      <div className="user-details">
+                        <h2>{selectedUser.name}</h2>
+                        <div className="user-contact-info">
+                          <span className="info-item">
+                            <span className="info-icon">📱</span>
+                            {selectedUser.phone}
+                          </span>
+                          <span className="info-item">
+                            <span className="info-icon">🎂</span>
+                            {format(new Date(selectedUser.birthdate), 'dd.MM.yyyy')}
+                            <span className="age-label">
+                              ({Math.floor((new Date() - new Date(selectedUser.birthdate)) / (365.25 * 24 * 60 * 60 * 1000))} років)
+                            </span>
+                          </span>
+                        </div>
+                      </div>
+                      <div className="user-actions">
+                        {selectedUser.is_blacklisted ? (
+                          <div className="status-section">
+                            <span className="user-status-banned">🚫 Заблоковано</span>
+                            <button
+                              onClick={() => handleToggleBlacklist(selectedUser.id, selectedUser.is_blacklisted)}
+                              className="btn-unban-user"
+                            >
+                              ✓ Розблокувати
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="status-section">
+                            <span className="user-status-active">✅ Активний</span>
+                            <button
+                              onClick={() => handleToggleBlacklist(selectedUser.id, selectedUser.is_blacklisted)}
+                              className="btn-ban-user"
+                            >
+                              🚫 Заблокувати
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Patient Notes Section - More compact */}
+                    <div className="patient-notes-compact">
+                      <div className="notes-header">
+                        <span className="notes-icon">📋</span>
+                        <span className="notes-title">Нотатки про пацієнта</span>
+                      </div>
+                      <textarea
+                        className="patient-notes-textarea"
+                        placeholder="Алергії, протипоказання, особливості лікування..."
+                        defaultValue={selectedUser.notes || ''}
+                        onBlur={(e) => handleUpdateUserNotes(selectedUser.id, e.target.value)}
+                        rows="2"
+                      />
+                    </div>
+                  </div>
                 </div>
 
                 <h3>Записи користувача ({userAppointments.length})</h3>

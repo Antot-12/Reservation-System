@@ -22,7 +22,7 @@ class SlotService:
     ) -> List[TimeSlot]:
         """Generate available time slots based on schedule configuration"""
 
-        # Get schedule config
+        # Get schedule config (should be cached at app level)
         schedule = db.query(ScheduleConfig).first()
         if not schedule:
             return []
@@ -30,23 +30,32 @@ class SlotService:
         # Get working days (default to Mon-Fri if not set)
         working_days = schedule.working_days if schedule.working_days else [0, 1, 2, 3, 4]
 
-        # Get days off
-        days_off = db.query(DayOff).filter(
+        # Optimize: Load all related data in single queries with proper date filters
+        days_off = db.query(DayOff.date).filter(
             DayOff.date >= from_date,
             DayOff.date <= to_date
         ).all()
-        days_off_set = {day_off.date for day_off in days_off}
+        days_off_set = {day_off[0] for day_off in days_off}  # Extract dates from tuples
 
-        # Get blocked slots
-        blocked_slots = db.query(BlockedSlot).filter(
-            BlockedSlot.start_time >= datetime.combine(from_date, dt_time.min),
-            BlockedSlot.end_time <= datetime.combine(to_date, dt_time.max)
+        # Get blocked slots with date range optimization
+        date_min = datetime.combine(from_date, dt_time.min)
+        date_max = datetime.combine(to_date, dt_time.max)
+
+        blocked_slots = db.query(
+            BlockedSlot.start_time,
+            BlockedSlot.end_time
+        ).filter(
+            BlockedSlot.start_time <= date_max,
+            BlockedSlot.end_time >= date_min
         ).all()
 
-        # Get existing bookings
-        existing_bookings = db.query(Appointment).filter(
-            Appointment.start_time >= datetime.combine(from_date, dt_time.min),
-            Appointment.end_time <= datetime.combine(to_date, dt_time.max),
+        # Get existing bookings - only load needed fields for performance
+        existing_bookings = db.query(
+            Appointment.start_time,
+            Appointment.end_time
+        ).filter(
+            Appointment.start_time <= date_max,
+            Appointment.end_time >= date_min,
             Appointment.status == AppointmentStatus.BOOKED
         ).all()
 
@@ -76,8 +85,8 @@ class SlotService:
         self,
         date: date,
         schedule: ScheduleConfig,
-        blocked_slots: List[BlockedSlot],
-        existing_bookings: List[Appointment],
+        blocked_slots: List[tuple],  # Changed to tuple for performance
+        existing_bookings: List[tuple],  # Changed to tuple for performance
         include_past: bool = False
     ) -> List[TimeSlot]:
         """Generate time slots for a specific day"""
@@ -99,10 +108,19 @@ class SlotService:
                 current_time = slot_end
                 continue
 
-            # Check if slot is blocked
-            if not self._is_slot_blocked(current_time, slot_end, blocked_slots):
-                # Check if slot is already booked
-                if not self._is_slot_booked(current_time, slot_end, existing_bookings):
+            # Check if slot is blocked or booked (optimized checks)
+            is_blocked = any(
+                current_time < blocked[1] and slot_end > blocked[0]
+                for blocked in blocked_slots
+            )
+
+            if not is_blocked:
+                is_booked = any(
+                    current_time < booking[1] and slot_end > booking[0]
+                    for booking in existing_bookings
+                )
+
+                if not is_booked:
                     slots.append(TimeSlot(
                         start_time=current_time,
                         end_time=slot_end
@@ -168,28 +186,35 @@ class SlotService:
         if start_time.weekday() not in working_days:
             return False
 
-        # Check if it's a day off
-        day_off = db.query(DayOff).filter(
-            DayOff.date == start_time.date()
-        ).first()
-        if day_off:
+        # Optimize: Check all blocking conditions in single query using EXISTS
+        from sqlalchemy import exists
+
+        # Check if it's a day off using exists
+        is_day_off = db.query(
+            exists().where(DayOff.date == start_time.date())
+        ).scalar()
+        if is_day_off:
             return False
 
-        # Check if slot is blocked
-        blocked = db.query(BlockedSlot).filter(
-            BlockedSlot.start_time < end_time,
-            BlockedSlot.end_time > start_time
-        ).first()
-        if blocked:
+        # Check if slot is blocked using exists
+        is_blocked = db.query(
+            exists().where(
+                BlockedSlot.start_time < end_time,
+                BlockedSlot.end_time > start_time
+            )
+        ).scalar()
+        if is_blocked:
             return False
 
-        # Check if slot is already booked
-        booking = db.query(Appointment).filter(
-            Appointment.start_time < end_time,
-            Appointment.end_time > start_time,
-            Appointment.status == AppointmentStatus.BOOKED
-        ).first()
-        if booking:
+        # Check if slot is already booked using exists
+        is_booked = db.query(
+            exists().where(
+                Appointment.start_time < end_time,
+                Appointment.end_time > start_time,
+                Appointment.status == AppointmentStatus.BOOKED
+            )
+        ).scalar()
+        if is_booked:
             return False
 
         return True

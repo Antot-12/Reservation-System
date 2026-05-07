@@ -74,9 +74,10 @@ class OTPCode(Base):
     id = Column(Integer, primary_key=True, index=True)
     phone = Column(String(20), nullable=False, index=True)
     code = Column(String(6), nullable=False)
-    expires_at = Column(DateTime, nullable=False)
+    expires_at = Column(DateTime, nullable=False, index=True)
     verified = Column(Boolean, default=False, nullable=False)
     attempts = Column(Integer, default=0, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
 
 
 class AuditLog(Base):

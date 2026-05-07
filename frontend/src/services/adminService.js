@@ -1,19 +1,8 @@
 import api from './api';
 
-// Get admin phone from backend
-export const getAdminPhone = async () => {
-  const response = await api.get('/admin/phone');
-  return response.data.phone;
-};
-
 // Admin Auth
-export const sendAdminOTP = async (phone) => {
-  const response = await api.post('/admin/send-otp', { phone });
-  return response.data;
-};
-
-export const verifyAdminOTP = async (phone, code) => {
-  const response = await api.post('/admin/verify-otp', { phone, code });
+export const adminLogin = async (username, password) => {
+  const response = await api.post('/admin/login', { username, password });
   if (response.data.session_token) {
     localStorage.setItem('adminToken', response.data.session_token);
   }
@@ -106,7 +95,7 @@ export const updateBlacklist = async (userId, isBlacklisted) => {
   return response.data;
 };
 
-export const addUserNote = async (userId, notes) => {
+export const updateUserNotes = async (userId, notes) => {
   const response = await api.post('/admin/users/note', {
     user_id: userId,
     notes,

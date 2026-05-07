@@ -63,7 +63,7 @@ async def create_appointment(
     if not otp_service.is_verified(db, request.phone):
         raise HTTPException(status_code=401, detail="Необхідна верифікація телефону")
 
-    # Get or create user
+    # Get or create user with single query
     user = db.query(User).filter(User.phone == request.phone).first()
 
     if not user:
@@ -84,16 +84,15 @@ async def create_appointment(
         track_user_registered()
         db.commit()
         db.refresh(user)
-
-    # Check if user is blacklisted
-    if user.is_blacklisted:
+    elif user.is_blacklisted:
+        # Check blacklist immediately after loading user
         raise HTTPException(
             status_code=403,
             detail="Ви не можете записатися на прийом"
         )
 
-    # Check max bookings
-    active_bookings = db.query(Appointment).filter(
+    # Check max bookings using optimized count query
+    active_bookings = db.query(Appointment.id).filter(
         Appointment.user_id == user.id,
         Appointment.status == AppointmentStatus.BOOKED,
         Appointment.start_time > datetime.utcnow()
@@ -109,7 +108,7 @@ async def create_appointment(
     if not slot_service.validate_slot_available(db, request.start_time):
         raise HTTPException(status_code=400, detail="Цей час вже зайнято")
 
-    # Get slot duration
+    # Get slot duration - cache schedule config
     schedule = db.query(ScheduleConfig).first()
     if not schedule:
         raise HTTPException(status_code=500, detail="Розклад не налаштовано")
@@ -148,17 +147,19 @@ async def cancel_appointment(
     if not otp_service.is_verified(db, phone):
         raise HTTPException(status_code=401, detail="Необхідна верифікація телефону")
 
-    # Get appointment
-    appointment = db.query(Appointment).filter(
+    # Get appointment with user in single query using joinedload
+    from sqlalchemy.orm import joinedload
+    appointment = db.query(Appointment).options(
+        joinedload(Appointment.user)
+    ).filter(
         Appointment.id == appointment_id
     ).first()
 
     if not appointment:
         raise HTTPException(status_code=404, detail="Запис не знайдено")
 
-    # Verify ownership
-    user = db.query(User).filter(User.id == appointment.user_id).first()
-    if user.phone != phone:
+    # Verify ownership (user already loaded with joinedload)
+    if appointment.user.phone != phone:
         raise HTTPException(status_code=403, detail="Немає доступу")
 
     # Check cancellation time

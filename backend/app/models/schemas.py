@@ -22,6 +22,11 @@ class VerifyOTPRequest(BaseModel):
     code: str
 
 
+class AdminLoginRequest(BaseModel):
+    username: str
+    password: str
+
+
 class OTPResponse(BaseModel):
     message: str
 

@@ -7,7 +7,7 @@ from typing import List, Optional
 from html import escape
 from app.core.database import get_db
 from app.models.schemas import (
-    SendOTPRequest, VerifyOTPRequest, SessionResponse,
+    SendOTPRequest, VerifyOTPRequest, SessionResponse, AdminLoginRequest,
     ScheduleConfigCreate, ScheduleConfigResponse,
     DayOffCreate, DayOffResponse,
     BlockedSlotCreate, BlockedSlotResponse,
@@ -28,6 +28,7 @@ from app.core.config import settings
 from app.utils.report_generator import ReportGenerator
 from jose import jwt
 from datetime import datetime, timedelta
+from passlib.hash import bcrypt as passlib_bcrypt
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -44,17 +45,49 @@ def format_report_birthdate_and_age(user: User):
     return user.birthdate.strftime('%d.%m.%Y'), f"{age} років"
 
 
+@router.post("/login", response_model=SessionResponse)
+def admin_login(request: AdminLoginRequest, req: Request, db: Session = Depends(get_db)):
+    """Admin login with username and password"""
+
+    # Verify username
+    if request.username != settings.ADMIN_USERNAME:
+        raise HTTPException(status_code=401, detail="Невірний логін або пароль")
+
+    # Verify password
+    try:
+        if not passlib_bcrypt.verify(request.password, settings.ADMIN_PASSWORD_HASH):
+            raise HTTPException(status_code=401, detail="Невірний логін або пароль")
+    except Exception:
+        raise HTTPException(status_code=401, detail="Невірний логін або пароль")
+
+    # Create session token
+    token = create_session_token(request.username)
+
+    # Log admin login
+    audit_log_service.log_admin_login(
+        db=db,
+        admin_phone=request.username,
+        ip_address=req.client.host if req.client else None,
+        user_agent=req.headers.get("user-agent")
+    )
+
+    return SessionResponse(
+        message="Успішний вхід",
+        session_token=token
+    )
+
+
 @router.get("/phone")
 def get_admin_phone():
     """Get admin phone number for login form"""
     return {"phone": settings.ADMIN_PHONE}
 
 
-def create_session_token(phone: str) -> str:
+def create_session_token(username: str) -> str:
     """Create session token for admin"""
     expires = datetime.utcnow() + timedelta(hours=settings.SESSION_EXPIRY_HOURS)
     payload = {
-        "phone": phone,
+        "username": username,
         "exp": expires
     }
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
@@ -63,22 +96,17 @@ def create_session_token(phone: str) -> str:
 def verify_admin_session(authorization: str = Header(None)) -> str:
     """Verify admin session token"""
 
-    # Allow hardcoded admin phone without real token verification
     if authorization and authorization.startswith("Bearer "):
         token = authorization.replace("Bearer ", "")
 
-        # Accept any token that looks like admin session
-        if token.startswith("admin-session-"):
-            return settings.ADMIN_PHONE
-
         try:
             payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-            phone = payload.get("phone")
+            username = payload.get("username")
 
-            if phone != settings.ADMIN_PHONE:
+            if username != settings.ADMIN_USERNAME:
                 raise HTTPException(status_code=403, detail="Немає доступу")
 
-            return phone
+            return username
         except Exception:
             raise HTTPException(status_code=401, detail="Невірна сесія")
 

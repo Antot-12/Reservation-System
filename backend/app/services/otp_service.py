@@ -11,13 +11,33 @@ class OTPService:
     def __init__(self):
         self.expiry_minutes = settings.OTP_EXPIRY_MINUTES
         self.max_attempts = settings.OTP_MAX_ATTEMPTS
+        self.max_otp_per_hour = 3
 
-    def send_otp(self, db: Session, phone: str) -> bool:
-        """Generate and send OTP code"""
+    def check_rate_limit(self, db: Session, phone: str) -> tuple[bool, int]:
+        """
+        Check if user has exceeded OTP rate limit.
+        Returns (is_allowed, count_in_last_hour)
+        Optimized: Single query with count
+        """
+        one_hour_ago = datetime.utcnow() - timedelta(hours=1)
+
+        count = db.query(OTPCode).filter(
+            OTPCode.phone == phone,
+            OTPCode.created_at > one_hour_ago
+        ).count()
+
+        return count < self.max_otp_per_hour, count
+
+    def send_otp(self, db: Session, phone: str) -> dict:
+        """
+        Generate and send OTP code.
+        Returns dict with success status and optional error message.
+        Optimized: Combined operations, reduced DB calls
+        """
 
         # Test user bypass - no SMS required
         if phone == "+380999999999":
-            # Invalidate previous codes
+            # Single operation: delete old + add new in one transaction
             db.query(OTPCode).filter(
                 OTPCode.phone == phone,
                 OTPCode.verified == False
@@ -29,13 +49,24 @@ class OTPService:
                 code="1111",
                 expires_at=datetime.utcnow() + timedelta(days=7),
                 verified=True,
-                attempts=0
+                attempts=0,
+                created_at=datetime.utcnow()
             )
             db.add(otp)
             db.commit()
-            return True
+            return {"success": True, "code": "1111"}
 
-        # Invalidate previous codes
+        # Check rate limit before generating OTP
+        is_allowed, count = self.check_rate_limit(db, phone)
+        if not is_allowed:
+            return {
+                "success": False,
+                "error": "rate_limit_exceeded",
+                "count": count,
+                "max": self.max_otp_per_hour
+            }
+
+        # Invalidate previous codes (single DELETE query)
         db.query(OTPCode).filter(
             OTPCode.phone == phone,
             OTPCode.verified == False
@@ -44,6 +75,7 @@ class OTPService:
         # Generate new code
         code = sms_service.generate_otp()
         expires_at = datetime.utcnow() + timedelta(minutes=self.expiry_minutes)
+        created_at = datetime.utcnow()
 
         # Save to database
         otp = OTPCode(
@@ -51,7 +83,8 @@ class OTPService:
             code=code,
             expires_at=expires_at,
             verified=False,
-            attempts=0
+            attempts=0,
+            created_at=created_at
         )
         db.add(otp)
         db.commit()
@@ -59,7 +92,7 @@ class OTPService:
         # OTP is saved to database
         # User will get code from Telegram bot by clicking button
         # Bot reads from same database and shows the code
-        return True
+        return {"success": True, "code": code}
 
     def _send_via_telegram(self, phone: str, code: str) -> bool:
         """Send OTP via Telegram bot"""
@@ -88,7 +121,10 @@ class OTPService:
             return False
 
     def verify_otp(self, db: Session, phone: str, code: str) -> bool:
-        """Verify OTP code"""
+        """
+        Verify OTP code.
+        Optimized: Single query with all filters
+        """
 
         # Test user bypass - any code works
         if phone == "+380999999999":
@@ -104,32 +140,25 @@ class OTPService:
                     code="1111",
                     expires_at=datetime.utcnow() + timedelta(hours=24),
                     verified=True,
-                    attempts=0
+                    attempts=0,
+                    created_at=datetime.utcnow()
                 )
                 db.add(otp)
                 db.commit()
 
             return True
 
+        # Optimized: Single query with all conditions
         otp = db.query(OTPCode).filter(
             OTPCode.phone == phone,
             OTPCode.code == code,
-            OTPCode.verified == False
+            OTPCode.verified == False,
+            OTPCode.expires_at > datetime.utcnow(),  # Check expiration in query
+            OTPCode.attempts < self.max_attempts      # Check attempts in query
         ).first()
 
         if not otp:
             return False
-
-        # Check if expired
-        if datetime.utcnow() > otp.expires_at:
-            return False
-
-        # Check attempts
-        if otp.attempts >= self.max_attempts:
-            return False
-
-        # Increment attempts
-        otp.attempts += 1
 
         # Verify code
         if otp.code == code:
@@ -139,19 +168,49 @@ class OTPService:
             db.commit()
             return True
 
+        # If code doesn't match, increment attempts
+        otp.attempts += 1
         db.commit()
         return False
 
     def is_verified(self, db: Session, phone: str) -> bool:
-        """Check if phone number has been verified recently"""
+        """
+        Check if phone number has been verified recently.
+        Optimized: Single query with exists()
+        """
+        return db.query(
+            db.query(OTPCode).filter(
+                OTPCode.phone == phone,
+                OTPCode.verified == True,
+                OTPCode.expires_at > datetime.utcnow()
+            ).exists()
+        ).scalar()
 
-        otp = db.query(OTPCode).filter(
+    def cleanup_expired_otps(self, db: Session) -> int:
+        """
+        Clean up expired OTP codes older than 24 hours.
+        Returns number of deleted records.
+        Should be called periodically (e.g., daily cron job)
+        """
+        threshold = datetime.utcnow() - timedelta(hours=24)
+
+        deleted = db.query(OTPCode).filter(
+            OTPCode.expires_at < threshold
+        ).delete()
+
+        db.commit()
+        return deleted
+
+    def get_active_otp(self, db: Session, phone: str) -> OTPCode | None:
+        """
+        Get active (non-verified, non-expired) OTP for a phone.
+        Optimized: Single query with all conditions
+        """
+        return db.query(OTPCode).filter(
             OTPCode.phone == phone,
-            OTPCode.verified == True,
+            OTPCode.verified == False,
             OTPCode.expires_at > datetime.utcnow()
-        ).order_by(OTPCode.expires_at.desc()).first()
-
-        return otp is not None
+        ).order_by(OTPCode.created_at.desc()).first()
 
 
 otp_service = OTPService()

@@ -48,10 +48,36 @@ except ImportError:
     from apscheduler.triggers.cron import CronTrigger
     import pytz
 
+# Configure logging with colors and better format
+class ColoredFormatter(logging.Formatter):
+    """Colored log formatter"""
+
+    grey = "\x1b[38;21m"
+    blue = "\x1b[38;5;39m"
+    yellow = "\x1b[38;5;226m"
+    red = "\x1b[38;5;196m"
+    bold_red = "\x1b[31;1m"
+    reset = "\x1b[0m"
+
+    FORMATS = {
+        logging.DEBUG: grey + "%(asctime)s - %(name)s - [%(levelname)s] - %(message)s" + reset,
+        logging.INFO: blue + "%(asctime)s - [%(levelname)s] %(message)s" + reset,
+        logging.WARNING: yellow + "%(asctime)s - [%(levelname)s] %(message)s" + reset,
+        logging.ERROR: red + "%(asctime)s - [%(levelname)s] %(message)s" + reset,
+        logging.CRITICAL: bold_red + "%(asctime)s - [%(levelname)s] %(message)s" + reset,
+    }
+
+    def format(self, record):
+        log_fmt = self.FORMATS.get(record.levelno)
+        formatter = logging.Formatter(log_fmt, datefmt='%Y-%m-%d %H:%M:%S')
+        return formatter.format(record)
+
 # Configure logging
+handler = logging.StreamHandler()
+handler.setFormatter(ColoredFormatter())
 logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - [%(funcName)s] %(message)s',
-    level=logging.INFO
+    level=logging.INFO,
+    handlers=[handler]
 )
 logger = logging.getLogger(__name__)
 
@@ -313,17 +339,19 @@ def save_user_profile(phone: str, name: str, birthdate: str) -> bool:
 
 
 def check_rate_limit(phone: str) -> Tuple[bool, int]:
-    """Check if user exceeded OTP rate limit. Returns (is_allowed, count_last_hour)"""
+    """
+    Check if user exceeded OTP rate limit. Returns (is_allowed, count_last_hour)
+    Optimized: Single query using created_at field
+    """
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
             one_hour_ago = datetime.utcnow() - timedelta(hours=1)
 
-            # Use id ordering since created_at doesn't exist
-            # Get the id from one hour ago by finding OTPs that would have expired by then
+            # Optimized: Use created_at for accurate rate limiting
             cursor.execute("""
                 SELECT COUNT(*) FROM public.otp_codes
-                WHERE phone = %s AND expires_at > %s
+                WHERE phone = %s AND created_at > %s
             """, (phone, one_hour_ago))
 
             count = cursor.fetchone()[0]
@@ -357,28 +385,64 @@ def log_bot_event(event_type: str, telegram_id: int, phone: Optional[str] = None
         logger.error(f"❌ Error logging event: {e}")
 
 
+def get_active_otp(phone: str) -> Optional[Tuple[str, datetime]]:
+    """
+    Get active (non-expired, unverified) OTP for a phone.
+    Returns (code, expires_at) or None
+    Optimized: Single query with all conditions
+    """
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT code, expires_at
+                FROM public.otp_codes
+                WHERE phone = %s
+                  AND verified = false
+                  AND expires_at > NOW()
+                ORDER BY created_at DESC
+                LIMIT 1
+            """, (phone,))
+
+            result = cursor.fetchone()
+            cursor.close()
+
+            if result:
+                return (result[0], result[1])
+            return None
+
+    except Exception as e:
+        logger.error(f"❌ Error getting active OTP: {e}")
+        return None
+
+
 def save_otp_to_database(phone: str, code: str) -> bool:
-    """Save OTP to database"""
+    """
+    Save OTP to database.
+    Optimized: Single transaction with created_at
+    """
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
 
-            # Delete old unverified OTPs
+            # Optimized: Delete old unverified OTPs in one query
             cursor.execute(
                 "DELETE FROM public.otp_codes WHERE phone = %s AND verified = false",
                 (phone,)
             )
 
-            # Insert new OTP (without created_at as it doesn't exist in backend model)
+            # Insert new OTP with created_at field
             expires_at = datetime.utcnow() + timedelta(minutes=OTP_EXPIRY_MINUTES)
+            created_at = datetime.utcnow()
+
             cursor.execute("""
-                INSERT INTO public.otp_codes (phone, code, expires_at, verified, attempts)
-                VALUES (%s, %s, %s, false, 0)
-            """, (phone, code, expires_at))
+                INSERT INTO public.otp_codes (phone, code, expires_at, verified, attempts, created_at)
+                VALUES (%s, %s, %s, false, 0, %s)
+            """, (phone, code, expires_at, created_at))
 
             conn.commit()
             cursor.close()
-            logger.info(f"✅ OTP saved to database for {phone}, expires at {expires_at}")
+            logger.info(f"✅ OTP saved to database for {phone}, expires at {expires_at}, created at {created_at}")
             return True
 
     except Exception as e:
@@ -489,17 +553,30 @@ def start_command(update: Update, context: CallbackContext) -> None:
     username = update.effective_user.username
 
     log_bot_event('start', user_id)
+    logger.info(f"🚀 User {user_id} ({username}) started bot")
 
     phone = get_user_phone(user_id)
     if phone:
+        # First, remove any existing reply keyboard
+        update.message.reply_text(
+            "🔄 Оновлення...",
+            reply_markup=ReplyKeyboardRemove()
+        )
+
+        # Then show the menu with inline keyboard
         reply_markup = get_main_menu_keyboard()
 
+        # Escape phone for MarkdownV2
+        phone_escaped = phone.replace('+', '\\+')
+
         update.message.reply_text(
-            f"👋 Привіт, {user_name}!\n\n"
-            f"📱 Ваш номер: {phone}\n\n"
+            f"👋 Привіт, {user_name}\\!\n\n"
+            f"📱 Ваш номер: `{phone_escaped}`\n\n"
             f"Оберіть дію з меню 👇",
+            parse_mode='MarkdownV2',
             reply_markup=reply_markup
         )
+        logger.info(f"✅ Sent main menu to user {user_id} with phone {phone}")
     else:
         button = KeyboardButton("📱 Поділитися номером", request_contact=True)
         keyboard = [[button]]
@@ -514,8 +591,7 @@ def start_command(update: Update, context: CallbackContext) -> None:
             parse_mode='Markdown',
             reply_markup=reply_markup
         )
-
-    logger.info(f"🚀 User {user_id} ({username}) started bot")
+        logger.info(f"✅ Sent phone request to new user {user_id}")
 
 
 def help_command(update: Update, context: CallbackContext) -> None:
@@ -743,18 +819,23 @@ def handle_contact(update: Update, context: CallbackContext) -> None:
     if save_user_phone(user_id, phone, username):
         log_bot_event('register', user_id, phone)
 
-        button = KeyboardButton("🔐 Отримати код")
-        keyboard = [[button]]
-        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+        # First remove the reply keyboard
+        update.message.reply_text(
+            "✅ Реєструю...",
+            reply_markup=ReplyKeyboardRemove()
+        )
+
+        # Then show the main menu with inline keyboard
+        reply_markup = get_main_menu_keyboard()
 
         update.message.reply_text(
-            f"✅ Номер {phone} збережено!\n\n"
+            f"✅ Номер `{phone}` збережено!\n\n"
             f"📝 *Як користуватись:*\n"
-            f"1️⃣ На сайті введіть: {phone}\n"
-            f"2️⃣ Натисніть кнопку тут 👇\n"
+            f"1️⃣ На сайті введіть: `{phone}`\n"
+            f"2️⃣ Натисніть кнопку \"🔐 Отримати код\"\n"
             f"3️⃣ Отримаєте код\n"
             f"4️⃣ Введіть код на сайті\n\n"
-            f"💡 Команди: /help",
+            f"Оберіть дію з меню 👇",
             parse_mode='Markdown',
             reply_markup=reply_markup
         )
@@ -771,6 +852,8 @@ def handle_text(update: Update, context: CallbackContext) -> None:
     """Handle text messages - generate OTP or process registration"""
     user_id = update.effective_user.id
 
+    logger.info(f"💬 Received text message from user {user_id}")
+
     # Check if user is in registration flow
     user_state = context.user_data.get('state')
 
@@ -784,6 +867,7 @@ def handle_text(update: Update, context: CallbackContext) -> None:
     # Normal OTP generation flow
     phone = get_user_phone(user_id)
     if not phone:
+        logger.warning(f"⚠️ User {user_id} tried to get OTP without registered phone")
         button = KeyboardButton("📱 Поділитися номером", request_contact=True)
         keyboard = [[button]]
         reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
@@ -793,62 +877,57 @@ def handle_text(update: Update, context: CallbackContext) -> None:
             "Або використайте /start",
             reply_markup=reply_markup
         )
-        logger.warning(f"⚠️ User {user_id} tried to get OTP without phone")
         return
+
+    logger.info(f"🔐 User {user_id} ({phone}) requested OTP code")
 
     # Check rate limit
     is_allowed, count = check_rate_limit(phone)
     if not is_allowed:
+        logger.warning(f"🚫 Rate limit exceeded for {phone}: {count}/{MAX_OTP_PER_HOUR}")
+        reply_markup = get_main_menu_keyboard()
         update.message.reply_text(
             f"🚫 *Перевищено ліміт запитів*\n\n"
             f"Ви вже отримали {count} кодів за останню годину.\n"
             f"Максимум: {MAX_OTP_PER_HOUR} кодів/годину\n\n"
-            f"⏰ Зачекайте до наступної години",
-            parse_mode='Markdown'
+            f"⏰ Зачекайте до наступної години\n\n"
+            f"Оберіть дію з меню 👇",
+            parse_mode='Markdown',
+            reply_markup=reply_markup
         )
         log_bot_event('rate_limit_exceeded', user_id, phone, f"count={count}")
-        logger.warning(f"🚫 Rate limit exceeded for {phone}: {count}/{MAX_OTP_PER_HOUR}")
         return
 
     # Check if there's an active OTP that hasn't expired
-    try:
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT code, expires_at FROM public.otp_codes
-                WHERE phone = %s AND verified = false AND expires_at > %s
-                ORDER BY id DESC LIMIT 1
-            """, (phone, datetime.utcnow()))
+    # Optimized: Use helper function instead of inline query
+    active_otp = get_active_otp(phone)
+    if active_otp:
+        code, expires_at = active_otp
+        remaining = (expires_at - datetime.utcnow()).total_seconds()
+        minutes = int(remaining // 60)
+        seconds = int(remaining % 60)
 
-            result = cursor.fetchone()
-            cursor.close()
-
-            if result:
-                code, expires_at = result
-                remaining = (expires_at - datetime.utcnow()).total_seconds()
-                minutes = int(remaining // 60)
-                seconds = int(remaining % 60)
-
-                update.message.reply_text(
-                    f"⏳ *У вас вже є активний код!*\n\n"
-                    f"🔐 Код: `{code}`\n"
-                    f"⏱ Дійсний ще *{minutes}хв {seconds}сек*\n\n"
-                    f"💡 Зачекайте, поки код не закінчиться",
-                    parse_mode='Markdown'
-                )
-                log_bot_event('active_otp_check', user_id, phone)
-                logger.info(f"⏳ User {phone} checked active OTP ({minutes}m {seconds}s remaining)")
-                return
-    except Exception as e:
-        logger.error(f"❌ Error checking existing OTP: {e}")
+        logger.info(f"⏳ User {phone} has active OTP: {code} (expires in {minutes}m {seconds}s)")
+        update.message.reply_text(
+            f"⏳ *У вас вже є активний код!*\n\n"
+            f"🔐 Код: `{code}`\n"
+            f"⏱ Дійсний ще *{minutes}хв {seconds}сек*\n\n"
+            f"💡 Зачекайте, поки код не закінчиться",
+            parse_mode='Markdown'
+        )
+        log_bot_event('active_otp_check', user_id, phone)
+        return
 
     # Generate OTP
     code = ''.join([str(random.randint(0, 9)) for _ in range(OTP_LENGTH)])
+    logger.info(f"🔢 Generated OTP code {code} for {phone}")
 
     # Save to database
     saved = save_otp_to_database(phone, code)
 
     if saved:
+        logger.info(f"✅ OTP {code} saved and sent to user {user_id} ({phone})")
+        reply_markup = get_main_menu_keyboard()
         update.message.reply_text(
             f"🔐 *Ваш код підтвердження:*\n\n"
             f"```\n"
@@ -856,14 +935,16 @@ def handle_text(update: Update, context: CallbackContext) -> None:
             f"```\n\n"
             f"📝 Введіть цей код на сайті\n"
             f"⏱ Дійсний {OTP_EXPIRY_MINUTES} хвилин\n\n"
-            f"💡 Команда /status для перевірки коду",
-            parse_mode='Markdown'
+            f"💡 Команда /status для перевірки коду\n\n"
+            f"Оберіть дію з меню 👇",
+            parse_mode='Markdown',
+            reply_markup=reply_markup
         )
         log_bot_event('otp_generated', user_id, phone, f"code={code}")
-        logger.info(f"✅ Code {code} generated for {phone}")
 
         # Check if user needs to complete profile
         if not check_user_profile_exists(phone):
+            logger.info(f"📋 User {phone} needs to complete profile")
             context.user_data['phone'] = phone
             context.user_data['state'] = STATE_WAITING_LAST_NAME
             update.message.reply_text(
@@ -872,16 +953,18 @@ def handle_text(update: Update, context: CallbackContext) -> None:
                 parse_mode='Markdown',
                 reply_markup=ReplyKeyboardRemove()
             )
-            logger.info(f"📋 Requesting profile from new user {phone}")
     else:
+        logger.error(f"❌ Failed to save OTP for {phone}")
+        reply_markup = get_main_menu_keyboard()
         update.message.reply_text(
             f"❌ *Помилка з'єднання з базою даних*\n\n"
             f"Спробуйте ще раз через хвилину\n\n"
-            f"Якщо проблема повторюється, зверніться до адміністратора",
-            parse_mode='Markdown'
+            f"Якщо проблема повторюється, зверніться до адміністратора\n\n"
+            f"Оберіть дію з меню 👇",
+            parse_mode='Markdown',
+            reply_markup=reply_markup
         )
         log_bot_event('otp_failed', user_id, phone, 'database_error')
-        logger.error(f"❌ Failed to save OTP for {phone}")
 
 
 def handle_name_input(update: Update, context: CallbackContext) -> None:
@@ -1082,9 +1165,10 @@ def status_command(update: Update, context: CallbackContext) -> None:
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
+            # Check for ANY active OTP (verified or not) that hasn't expired
             cursor.execute("""
-                SELECT code, expires_at FROM public.otp_codes
-                WHERE phone = %s AND verified = false AND expires_at > %s
+                SELECT code, expires_at, verified FROM public.otp_codes
+                WHERE phone = %s AND expires_at > %s
                 ORDER BY id DESC LIMIT 1
             """, (phone, datetime.utcnow()))
 
@@ -1092,30 +1176,39 @@ def status_command(update: Update, context: CallbackContext) -> None:
             cursor.close()
 
             if result:
-                code, expires_at = result
+                code, expires_at, verified = result
                 remaining = (expires_at - datetime.utcnow()).total_seconds()
                 minutes = int(remaining // 60)
                 seconds = int(remaining % 60)
 
-                update.message.reply_text(
-                    f"📱 *Статус*\n\n"
-                    f"📞 Номер: {phone}\n"
-                    f"🔐 Код: `{code}`\n"
-                    f"⏱ Ще *{minutes}хв {seconds}сек*",
-                    parse_mode='Markdown'
-                )
-                logger.info(f"ℹ️ Status check for {phone}: code active")
-            else:
-                button = KeyboardButton("🔐 Отримати код")
-                keyboard = [[button]]
-                reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+                reply_markup = get_main_menu_keyboard()
+                phone_escaped = phone.replace('+', '\\+')
+
+                # Show different message for verified vs unverified codes
+                status_icon = "✅" if verified else "⏳"
+                status_text = "використаний" if verified else "активний"
 
                 update.message.reply_text(
-                    f"📱 *Статус*\n\n"
-                    f"📞 Номер: {phone}\n"
+                    f"*Статус*\n\n"
+                    f"Номер: `{phone_escaped}`\n"
+                    f"Код: `{code}` {status_icon}\n"
+                    f"Статус: {status_text}\n"
+                    f"Дійсний ще *{minutes}хв {seconds}сек*\n\n"
+                    f"Оберіть дію з меню 👇",
+                    parse_mode='MarkdownV2',
+                    reply_markup=reply_markup
+                )
+                logger.info(f"ℹ️ Status check for {phone}: code {code} ({status_text}, {minutes}m {seconds}s remaining)")
+            else:
+                reply_markup = get_main_menu_keyboard()
+                phone_escaped = phone.replace('+', '\\+')
+
+                update.message.reply_text(
+                    f"*Статус*\n\n"
+                    f"Номер: `{phone_escaped}`\n"
                     f"✅ Готовий до отримання нового коду\n\n"
-                    f"Натисніть кнопку 👇",
-                    parse_mode='Markdown',
+                    f"Оберіть дію з меню 👇",
+                    parse_mode='MarkdownV2',
                     reply_markup=reply_markup
                 )
                 logger.info(f"ℹ️ Status check for {phone}: no active code")
@@ -1157,28 +1250,34 @@ def error_handler(update: Update, context: CallbackContext) -> None:
     if update and update.effective_message:
         try:
             # Customize message based on error type
+            reply_markup = get_main_menu_keyboard()
+
             if "timeout" in str(error).lower() or "connection" in str(error).lower():
                 message = (
                     "⏱ *Час очікування сплив*\n\n"
                     "Схоже, виникли проблеми з підключенням.\n"
                     "Спробуйте ще раз через кілька секунд.\n\n"
-                    "Команди: /help"
+                    "Оберіть дію з меню 👇"
                 )
             elif "database" in str(error).lower():
                 message = (
                     "❌ *Помилка бази даних*\n\n"
                     "Спробуйте ще раз через хвилину.\n"
                     "Якщо проблема повторюється, зверніться до адміністратора.\n\n"
-                    "Команди: /help"
+                    "Оберіть дію з меню 👇"
                 )
             else:
                 message = (
                     "❌ *Виникла помилка*\n\n"
                     "Спробуйте ще раз або зверніться до адміністратора.\n\n"
-                    "Команди: /help"
+                    "Оберіть дію з меню 👇"
                 )
 
-            update.effective_message.reply_text(message, parse_mode='Markdown')
+            update.effective_message.reply_text(
+                message,
+                parse_mode='Markdown',
+                reply_markup=reply_markup
+            )
         except Exception as e:
             logger.error(f"Failed to send error message to user: {e}")
 
@@ -1209,13 +1308,20 @@ def button_callback(update: Update, context: CallbackContext) -> None:
             # Check rate limit
             is_allowed, count = check_rate_limit(phone)
             if not is_allowed:
-                query.edit_message_text(
-                    f"🚫 *Перевищено ліміт запитів*\n\n"
-                    f"Ви вже отримали {count} кодів за останню годину.\n"
-                    f"Максимум: {MAX_OTP_PER_HOUR} кодів/годину\n\n"
-                    f"⏰ Зачекайте до наступної години",
-                    parse_mode='Markdown'
-                )
+                reply_markup = get_main_menu_keyboard()
+                try:
+                    query.edit_message_text(
+                        f"🚫 *Перевищено ліміт запитів*\n\n"
+                        f"Ви вже отримали {count} кодів за останню годину\\.\n"
+                        f"Максимум: {MAX_OTP_PER_HOUR} кодів/годину\n\n"
+                        f"⏰ Зачекайте до наступної години\n\n"
+                        f"Оберіть дію з меню 👇",
+                        parse_mode='MarkdownV2',
+                        reply_markup=reply_markup
+                    )
+                except Exception as e:
+                    # Message already exists with same content, just answer callback
+                    query.answer("🚫 Перевищено ліміт запитів")
                 log_bot_event('rate_limit_exceeded', user_id, phone, f"count={count}")
                 return
 
@@ -1284,6 +1390,7 @@ def button_callback(update: Update, context: CallbackContext) -> None:
                 query.edit_message_text("❌ Спочатку поділіться номером телефону")
                 return
 
+            logger.info(f"📋 Fetching appointments for user {user_id} ({phone})")
             appointments = get_user_appointments(phone)
             reply_markup = get_main_menu_keyboard()
 
@@ -1295,22 +1402,29 @@ def button_callback(update: Update, context: CallbackContext) -> None:
                     parse_mode='Markdown',
                     reply_markup=reply_markup
                 )
+                logger.info(f"✅ No appointments for user {user_id}")
                 return
 
+            logger.info(f"📅 Formatting {len(appointments)} appointments for user {user_id}")
             message = "📅 *Мої записи:*\n\n"
             for i, apt in enumerate(appointments[:5], 1):  # Show max 5
                 start_time = apt['start_time']
                 status_emoji = "✅" if apt['status'] == 'booked' else "📝"
                 user_name = escape_markdown(apt['user_name'])
+
+                # Format dates with escaped special chars for MarkdownV2
+                date_str = start_time.strftime('%d.%m.%Y').replace('.', '\\.')
+                time_str = f"{start_time.strftime('%H:%M')} \\- {apt['end_time'].strftime('%H:%M')}"
+
                 message += (
-                    f"{status_emoji} *Запис #{i}*\n"
-                    f"📆 {start_time.strftime('%d.%m.%Y')}\n"
-                    f"🕐 {start_time.strftime('%H:%M')} - {apt['end_time'].strftime('%H:%M')}\n"
+                    f"{status_emoji} *Запис \\#{i}*\n"  # Escape # character
+                    f"📆 {date_str}\n"
+                    f"🕐 {time_str}\n"
                     f"👤 {user_name}\n"
                     f"━━━━━━━━━━━━━━\n\n"
                 )
 
-            message += "Для скасування: /cancel ID_запису"
+            message += "Для скасування: `/cancel ID\\_запису`"
 
             # Add cancel buttons for each appointment
             cancel_buttons = []
@@ -1324,20 +1438,12 @@ def button_callback(update: Update, context: CallbackContext) -> None:
             cancel_buttons.append([InlineKeyboardButton("🔙 Головне меню", callback_data="main_menu")])
             reply_markup = InlineKeyboardMarkup(cancel_buttons)
 
-            # DEBUG: Log the exact message being sent
-            logger.info(f"DEBUG: Message length: {len(message)} bytes")
-            logger.info(f"DEBUG: Message content:\n{message}")
-            logger.info(f"DEBUG: Message repr: {repr(message)}")
-            backslash = '\\'
-            for i, char in enumerate(message):
-                if char in ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']:
-                    has_escape = backslash in message[max(0,i-1):i+1]
-                    logger.info(f"DEBUG: Special char at position {i}: '{char}' (escaped: {has_escape})")
-            if len(message) >= 192:
-                logger.info(f"DEBUG: Char at byte 192: '{message[192]}' (ord={ord(message[192])})")
-                logger.info(f"DEBUG: Context 180-200: {message[180:200]}")
-
-            query.edit_message_text(message, parse_mode='Markdown', reply_markup=reply_markup)
+            try:
+                query.edit_message_text(message, parse_mode='MarkdownV2', reply_markup=reply_markup)
+                logger.info(f"✅ Sent {len(appointments)} appointments to user {user_id}")
+            except Exception as e:
+                logger.error(f"❌ Error showing appointments to user {user_id}: {e}")
+                query.answer("❌ Помилка відображення записів")
 
         elif data.startswith("cancel_"):
             appointment_id = int(data.split("_")[1])
@@ -1364,12 +1470,15 @@ def button_callback(update: Update, context: CallbackContext) -> None:
                 query.edit_message_text("❌ Спочатку поділіться номером телефону")
                 return
 
+            logger.info(f"📊 User {user_id} ({phone}) checking OTP status")
+
             try:
                 with get_db_connection() as conn:
                     cursor = conn.cursor()
+                    # Check for ANY active OTP (verified or not) that hasn't expired
                     cursor.execute("""
-                        SELECT code, expires_at FROM public.otp_codes
-                        WHERE phone = %s AND verified = false AND expires_at > %s
+                        SELECT code, expires_at, verified FROM public.otp_codes
+                        WHERE phone = %s AND expires_at > %s
                         ORDER BY id DESC LIMIT 1
                     """, (phone, datetime.utcnow()))
 
@@ -1377,32 +1486,42 @@ def button_callback(update: Update, context: CallbackContext) -> None:
                     cursor.close()
 
                     reply_markup = get_main_menu_keyboard()
+                    phone_escaped = phone.replace('+', '\\+')
 
                     if result:
-                        code, expires_at = result
+                        code, expires_at, verified = result
                         remaining = (expires_at - datetime.utcnow()).total_seconds()
                         minutes = int(remaining // 60)
                         seconds = int(remaining % 60)
 
+                        # Show different message for verified vs unverified codes
+                        status_icon = "✅" if verified else "⏳"
+                        status_text = "використаний" if verified else "активний"
+
+                        logger.info(f"✅ User {user_id} has code: {code} ({status_text}, {minutes}m {seconds}s remaining)")
                         query.edit_message_text(
-                            f"📱 *Статус*\n\n"
-                            f"📞 Номер: {phone}\n"
-                            f"🔐 Код: `{code}`\n"
-                            f"⏱ Ще *{minutes}хв {seconds}сек*",
-                            parse_mode='Markdown',
+                            f"*Статус*\n\n"
+                            f"Номер: `{phone_escaped}`\n"
+                            f"Код: `{code}` {status_icon}\n"
+                            f"Статус: {status_text}\n"
+                            f"Дійсний ще *{minutes}хв {seconds}сек*\n\n"
+                            f"Оберіть дію з меню 👇",
+                            parse_mode='MarkdownV2',
                             reply_markup=reply_markup
                         )
                     else:
+                        logger.info(f"ℹ️ User {user_id} has no active code")
                         query.edit_message_text(
-                            f"📱 *Статус*\n\n"
-                            f"📞 Номер: {phone}\n"
-                            f"✅ Готовий до отримання нового коду",
-                            parse_mode='Markdown',
+                            f"*Статус*\n\n"
+                            f"Номер: `{phone_escaped}`\n"
+                            f"✅ Готовий до отримання нового коду\n\n"
+                            f"Оберіть дію з меню 👇",
+                            parse_mode='MarkdownV2',
                             reply_markup=reply_markup
                         )
             except Exception as e:
-                logger.error(f"❌ Status error: {e}")
-                query.edit_message_text("❌ Помилка перевірки статусу")
+                logger.error(f"❌ Status error for user {user_id}: {e}")
+                query.answer("❌ Помилка перевірки статусу")
 
         elif data == "reset":
             button = KeyboardButton("📱 Поділитися номером", request_contact=True)

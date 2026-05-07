@@ -17,8 +17,9 @@ class Settings(BaseSettings):
     # Database
     DATABASE_URL: str
 
-    # Admin
-    ADMIN_PHONE: str
+    # Admin Authentication
+    ADMIN_USERNAME: str
+    ADMIN_PASSWORD_HASH: str
 
     # Frontend
     FRONTEND_URL: str = "http://localhost:3000"

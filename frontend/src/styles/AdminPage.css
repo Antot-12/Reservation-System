@@ -81,6 +81,12 @@
   min-width: 0;
 }
 
+.user-name-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .user-name {
   font-size: 1rem;
   font-weight: 700;
@@ -88,6 +94,17 @@
   margin: 0;
   word-break: break-word;
   overflow-wrap: break-word;
+}
+
+.user-has-notes {
+  font-size: 1rem;
+  cursor: help;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+.user-has-notes:hover {
+  opacity: 1;
 }
 
 .user-phone {
@@ -125,8 +142,142 @@
 
 .selected-user-header {
   margin-bottom: 1.5rem;
-  padding-bottom: 1rem;
-  border-bottom: 2px solid var(--border-color);
+}
+
+.user-header-card {
+  background: linear-gradient(135deg, rgba(6, 182, 212, 0.05), rgba(6, 182, 212, 0.02));
+  border: 1.5px solid var(--border-color);
+  border-radius: 12px;
+  padding: 1.25rem;
+  box-shadow: var(--shadow);
+}
+
+.user-main-info {
+  display: flex;
+  gap: 1.25rem;
+  align-items: flex-start;
+  margin-bottom: 1rem;
+}
+
+.user-avatar {
+  width: 70px;
+  height: 70px;
+  background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 4px 12px rgba(6, 182, 212, 0.3);
+}
+
+.avatar-icon {
+  font-size: 2rem;
+}
+
+.user-details {
+  flex: 1;
+  min-width: 0;
+}
+
+.user-details h2 {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin: 0 0 0.75rem 0;
+}
+
+.user-contact-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.info-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.95rem;
+  color: var(--text-secondary);
+}
+
+.info-icon {
+  font-size: 1.1rem;
+  opacity: 0.8;
+}
+
+.age-label {
+  margin-left: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+.user-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  align-items: flex-end;
+}
+
+.status-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: flex-end;
+}
+
+.patient-notes-compact {
+  background: var(--bg-secondary);
+  border: 1.5px solid var(--border-color);
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.notes-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.notes-icon {
+  font-size: 1.2rem;
+}
+
+.notes-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.patient-notes-textarea {
+  width: 100%;
+  padding: 0.75rem;
+  background: var(--bg-tertiary);
+  border: 1.5px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  font-family: inherit;
+  resize: vertical;
+  min-height: 60px;
+  transition: all 0.3s ease;
+}
+
+.patient-notes-textarea:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.1);
+  background: var(--bg-secondary);
+}
+
+.patient-notes-textarea::placeholder {
+  color: var(--text-tertiary);
+  opacity: 0.6;
+  font-size: 0.85rem;
 }
 
 .selected-user-header h2 {
@@ -168,15 +319,14 @@
 
 .btn-ban-user,
 .btn-unban-user {
-  padding: 0.6rem 1.2rem;
-  border-radius: 8px;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
   border: none;
   font-weight: 600;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   cursor: pointer;
   transition: all 0.3s ease;
-  margin-top: 0.5rem;
-  display: block;
+  white-space: nowrap;
 }
 
 .btn-ban-user {
@@ -481,15 +631,42 @@
   box-shadow: 0 4px 12px rgba(244, 67, 54, 0.3);
 }
 
-.admin-tabs {
+.admin-header {
   background: var(--bg-secondary);
-  padding: 0 48px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  border-bottom: 2px solid var(--border-color);
+}
+
+.admin-tabs {
   display: flex;
   gap: 4px;
-  border-bottom: 2px solid var(--border-color);
   overflow-x: auto;
   scrollbar-width: thin;
+  padding: 0 48px;
   justify-content: center;
+}
+
+.logout-button {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--accent-red, #ef4444);
+  border: 1.5px solid rgba(239, 68, 68, 0.3);
+  border-radius: 8px;
+  padding: 8px 20px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-right: 1.5rem;
+  white-space: nowrap;
+}
+
+.logout-button:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.5);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.2);
 }
 
 .admin-tabs::-webkit-scrollbar {

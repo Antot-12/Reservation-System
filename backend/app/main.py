@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from app.api import auth, user, admin, websocket, calendar, telegram
-from app.core.database import engine, Base
+from app.core.database import engine, Base, close_db_connections, get_pool_status
 from app.core.csrf import CSRFMiddleware, get_csrf_token_generator
 from app.core.monitoring import (
     init_sentry,
@@ -11,6 +11,9 @@ from app.core.monitoring import (
     CONTENT_TYPE_LATEST
 )
 from app.core.config import settings
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Initialize Sentry
 init_sentry()
@@ -41,6 +44,21 @@ if settings.ENABLE_METRICS:
 # Add CSRF Protection (disabled for development, enable in production)
 # app.add_middleware(CSRFMiddleware)
 
+# Startup event
+@app.on_event("startup")
+async def startup_event():
+    logger.info("Application starting up")
+    logger.info(f"Database connection pool initialized")
+    pool_status = get_pool_status()
+    logger.info(f"Pool status: {pool_status}")
+
+# Shutdown event
+@app.on_event("shutdown")
+async def shutdown_event():
+    logger.info("Application shutting down")
+    close_db_connections()
+    logger.info("Database connections closed")
+
 # API v1 routers
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(user.router, prefix="/api/v1")
@@ -69,7 +87,21 @@ def root():
 
 @app.get("/health")
 def health_check():
-    return {"status": "healthy", "version": "1.0.0"}
+    """
+    Health check endpoint with database pool status.
+    """
+    pool_status = get_pool_status()
+    return {
+        "status": "healthy",
+        "version": "1.0.0",
+        "database": {
+            "pool_size": pool_status["size"],
+            "checked_in": pool_status["checked_in"],
+            "checked_out": pool_status["checked_out"],
+            "overflow": pool_status["overflow"],
+            "total_connections": pool_status["total_connections"]
+        }
+    }
 
 
 @app.get("/csrf-token")

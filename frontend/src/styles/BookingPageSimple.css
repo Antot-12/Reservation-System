@@ -109,6 +109,12 @@
   padding-left: 2.75rem;
 }
 
+/* Make the calendar picker icon white */
+.birthdate-input::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  filter: invert(1) brightness(2);
+}
+
 .otp-hint {
   font-size: 0.9rem;
   color: var(--text-tertiary);

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { format, parseISO } from 'date-fns';
 import { uk } from 'date-fns/locale';
 import { toast } from 'react-toastify';
-import { getAvailableSlots, createAppointment, getUserAppointments, cancelAppointment, deleteAppointment, sendOTP, verifyOTP, getUserProfile, createOrUpdateProfile } from '../services/userService';
+import { getAvailableSlots, createAppointment, getUserAppointments, cancelAppointment, deleteAppointment, sendOTP, verifyOTP, getUserProfile, createOrUpdateProfile, clearSlotsCache } from '../services/userService';
 import { getUserPhone, saveUserSession } from '../utils/storage';
 import { addMonths, isBefore, isWeekend, startOfDay, addDays, isSameDay } from 'date-fns';
 import Calendar from 'react-calendar';
@@ -88,6 +88,9 @@ const BookingPage = ({ onUserVerified }) => {
           const data = await getAvailableSlots(dateStr, dateStr);
           if (data && data.length > 0) {
             setSelectedDate(checkDate);
+            // Store the slots we just fetched to avoid refetching
+            setSlots(data);
+            setSlotsLoading(false);
             return;
           }
         } catch (error) {
@@ -108,12 +111,12 @@ const BookingPage = ({ onUserVerified }) => {
     }
   }, [verified, selectedDate, loadDaysOff, loadUserAppointments, findFirstAvailableDate]);
 
-  // Load slots when date changes
+  // Load slots when date changes (but skip if we already have slots from findFirstAvailableDate)
   useEffect(() => {
-    if (selectedDate) {
+    if (selectedDate && slots.length === 0 && !slotsLoading) {
       loadSlots();
     }
-  }, [selectedDate, loadSlots]);
+  }, [selectedDate, slots.length, slotsLoading, loadSlots]);
 
   const handleCancelAppointment = async (appointmentId) => {
     if (!window.confirm('Скасувати цей запис?')) return;
@@ -122,11 +125,15 @@ const BookingPage = ({ onUserVerified }) => {
       await cancelAppointment(appointmentId, phone);
       toast.success('Запис скасовано');
 
+      // Clear cache so slots are refreshed
+      clearSlotsCache();
+
       // Reload appointments list (user-cancelled ones will be filtered out by backend)
       loadUserAppointments();
 
       // Reload slots to show the freed time
       if (selectedDate) {
+        setSlots([]); // Clear current slots
         loadSlots();
       }
     } catch (error) {
@@ -263,10 +270,14 @@ const BookingPage = ({ onUserVerified }) => {
 
       toast.success('✅ Запис успішно створено!');
 
+      // Clear cache so slots are refreshed
+      clearSlotsCache();
+
       // Reset to calendar view (step 1)
       setStep(1);
       setSelectedDate(null);
       setSelectedSlot(null);
+      setSlots([]); // Clear slots
 
       // Reload appointments and find next available date
       loadUserAppointments();
@@ -426,9 +437,10 @@ const BookingPage = ({ onUserVerified }) => {
                         const tomorrowApts = userAppointments.filter(apt =>
                           isSameDay(new Date(apt.start_time), tomorrow)
                         );
-                        const laterApts = userAppointments.filter(apt =>
-                          new Date(apt.start_time) > addDays(today, 1)
-                        );
+                        const laterApts = userAppointments.filter(apt => {
+                          const aptDate = new Date(apt.start_time);
+                          return aptDate > tomorrow && !isSameDay(aptDate, tomorrow);
+                        });
 
                         return (
                           <>
@@ -573,6 +585,7 @@ const BookingPage = ({ onUserVerified }) => {
                   <Calendar
                     onChange={(date) => {
                       setSelectedDate(date);
+                      setSlots([]); // Clear slots to trigger fresh load for manually selected date
                       setStep(2);
                     }}
                     value={selectedDate}

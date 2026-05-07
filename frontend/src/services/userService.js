@@ -11,15 +11,57 @@ export const verifyOTP = async (phone, code) => {
   return response.data;
 };
 
-// Slots Services
+// Slots Services with in-memory cache
+const slotsCache = new Map();
+const inFlightRequests = new Map();
+const CACHE_TTL = 60000; // 1 minute cache
+
 export const getAvailableSlots = async (fromDate, toDate) => {
-  const response = await api.get('/slots', {
+  const cacheKey = `${fromDate}_${toDate}`;
+
+  // Check cache first
+  const cached = slotsCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return cached.data;
+  }
+
+  // Check if request is already in flight
+  const inFlight = inFlightRequests.get(cacheKey);
+  if (inFlight) {
+    return inFlight;
+  }
+
+  // Make new request
+  const requestPromise = api.get('/slots', {
     params: {
       from_date: fromDate,
       to_date: toDate,
     },
+  }).then(response => {
+    // Cache the result
+    slotsCache.set(cacheKey, {
+      data: response.data,
+      timestamp: Date.now()
+    });
+    // Clear in-flight marker
+    inFlightRequests.delete(cacheKey);
+    return response.data;
+  }).catch(error => {
+    // Clear in-flight marker on error
+    inFlightRequests.delete(cacheKey);
+    throw error;
   });
-  return response.data;
+
+  // Store in-flight request
+  inFlightRequests.set(cacheKey, requestPromise);
+
+  return requestPromise;
+};
+
+// Clear slots cache (useful after booking/cancellation)
+export const clearSlotsCache = () => {
+  slotsCache.clear();
+  inFlightRequests.clear();
 };
 
 // Appointments Services
