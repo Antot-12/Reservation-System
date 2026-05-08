@@ -1,10 +1,11 @@
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 from app.models.models import OTPCode
-from app.services.sms_service import sms_service
 from app.core.config import settings
 import httpx
 import os
+import random
+import string
 
 
 class OTPService:
@@ -12,6 +13,10 @@ class OTPService:
         self.expiry_minutes = settings.OTP_EXPIRY_MINUTES
         self.max_attempts = settings.OTP_MAX_ATTEMPTS
         self.max_otp_per_hour = 3
+
+    def generate_otp(self, length: int = 4) -> str:
+        """Generate a random OTP code"""
+        return ''.join(random.choices(string.digits, k=length))
 
     def check_rate_limit(self, db: Session, phone: str) -> tuple[bool, int]:
         """
@@ -73,7 +78,7 @@ class OTPService:
         ).delete()
 
         # Generate new code
-        code = sms_service.generate_otp()
+        code = self.generate_otp()
         expires_at = datetime.utcnow() + timedelta(minutes=self.expiry_minutes)
         created_at = datetime.utcnow()
 
