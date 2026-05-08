@@ -177,12 +177,11 @@ A production-ready medical appointment booking platform with three main componen
                            │  (Port 8000)   │
                            └───────┬────────┘
                                    │
-                    ┌──────────────┼──────────────┐
-                    │              │              │
-            ┌───────▼──────┐  ┌───▼────┐  ┌─────▼──────┐
-            │  PostgreSQL  │  │ Twilio │  │   SMTP     │
-            │  (Supabase)  │  │  SMS   │  │   Email    │
-            └──────────────┘  └────────┘  └────────────┘
+                                   │
+                           ┌───────▼──────┐
+                           │  PostgreSQL  │
+                           │  (Supabase)  │
+                           └──────────────┘
 ```
 
 ### Data Flow Diagrams
@@ -215,8 +214,6 @@ A production-ready medical appointment booking platform with three main componen
                     Patient selects time → Frontend creates booking
                               ↓
                     Backend validates & saves to database
-                              ↓
-                    Email notification sent to doctor
 
 3. Cancellation
    Patient cancels → Frontend sends request
@@ -224,8 +221,6 @@ A production-ready medical appointment booking platform with three main componen
                     Backend marks appointment as cancelled
                               ↓
                     Cache invalidated
-                              ↓
-                    Email notification sent to doctor
 ```
 
 #### Admin Operations Flow
@@ -381,7 +376,7 @@ Admin → Frontend → Backend → Verify credentials from .env
 
 | Feature | Description | Status |
 |---------|-------------|--------|
-| **OTP Delivery** | Instant code delivery (faster than SMS) | ✅ Working |
+| **OTP Delivery** | Instant code delivery via Telegram bot | ✅ Working |
 | **User Registration** | Collect user profile on first use | ✅ Working |
 | **Rate Limiting** | Max 3 codes/hour per user | ✅ Working |
 | **Appointment Viewing** | See upcoming appointments | ✅ Working |
@@ -553,19 +548,6 @@ SKIP_USER_OTP_VERIFICATION=false
 BOT_SECRET=my-secret-key-for-telegram-bot-2024
 TELEGRAM_BOT_URL=http://localhost:5000
 
-# Email Configuration (SMTP)
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
-SMTP_USERNAME=your_email@gmail.com
-SMTP_PASSWORD=your_app_password
-SMTP_FROM=your_email@gmail.com
-DOCTOR_EMAIL=doctor@clinic.com
-
-# Twilio SMS (Optional - for SMS reminders)
-TWILIO_ACCOUNT_SID=your_twilio_account_sid
-TWILIO_AUTH_TOKEN=your_twilio_auth_token
-TWILIO_PHONE_NUMBER=+1234567890
-
 # Business Logic Rules
 MAX_BOOKINGS_PER_USER=6
 CANCELLATION_HOURS_BEFORE=48
@@ -607,17 +589,6 @@ FRONTEND_URL=http://localhost:3000
 | **Telegram Bot** | | | |
 | `BOT_SECRET` | ❌ | `change-this-in-production` | Secret for bot communication |
 | `TELEGRAM_BOT_URL` | ❌ | `http://localhost:5000` | Telegram bot server URL |
-| **Email (SMTP)** | | | |
-| `SMTP_HOST` | ❌ | `smtp.gmail.com` | SMTP server hostname |
-| `SMTP_PORT` | ❌ | `587` | SMTP server port |
-| `SMTP_USERNAME` | ❌ | - | SMTP username/email |
-| `SMTP_PASSWORD` | ❌ | - | SMTP password/app password |
-| `SMTP_FROM` | ❌ | - | From email address |
-| `DOCTOR_EMAIL` | ❌ | - | Doctor's email for notifications |
-| **Twilio SMS** | | | |
-| `TWILIO_ACCOUNT_SID` | ❌ | - | Twilio account SID |
-| `TWILIO_AUTH_TOKEN` | ❌ | - | Twilio authentication token |
-| `TWILIO_PHONE_NUMBER` | ❌ | - | Twilio sender phone number |
 | **Business Rules** | | | |
 | `MAX_BOOKINGS_PER_USER` | ❌ | `6` | Max active appointments per user |
 | `CANCELLATION_HOURS_BEFORE` | ❌ | `48` | Minimum hours before appointment to cancel |
@@ -732,19 +703,15 @@ These are hardcoded in `backend/app/core/database.py`:
 |--------|------|-------------|-------------|
 | id | Integer | PRIMARY KEY, AUTO_INCREMENT | Unique user ID |
 | phone | String(20) | UNIQUE, NOT NULL, INDEX | Phone number (format: +380XXXXXXXXX) |
-| email | String(255) | UNIQUE, INDEX | Email address (optional) |
 | name | String(255) | NOT NULL | Full name |
 | birthdate | Date | NOT NULL | Date of birth |
 | is_blacklisted | Boolean | DEFAULT false | Blacklist status (prevents booking) |
-| email_verified | Boolean | DEFAULT false | Email verification status |
-| verification_token | String(255) | | Email verification token |
 | calendar_feed_token | String(255) | UNIQUE, INDEX | iCal feed access token |
 | notes | Text | | Admin notes about this user |
 | created_at | DateTime | DEFAULT NOW() | Account creation timestamp |
 
 **Indexes:**
 - `idx_users_phone` on `phone`
-- `idx_users_email` on `email`
 - `idx_users_calendar_token` on `calendar_feed_token`
 
 **Relationships:**
@@ -2791,13 +2758,9 @@ rezervation/
 │   │   │   │                           # - Track IP address & user agent
 │   │   │   │                           # - Store change details in JSON
 │   │   │   │
-│   │   │   ├── calendar_service.py     # iCal feed generation
-│   │   │   │                           # - Generate .ics files
-│   │   │   │                           # - Personal appointment feeds
-│   │   │   │
-│   │   │   └── sms_service.py          # Twilio SMS integration
-│   │   │                               # - Send appointment reminders
-│   │   │                               # - SMS delivery tracking
+│   │   │   └── calendar_service.py     # iCal feed generation
+│   │   │                               # - Generate .ics files
+│   │   │                               # - Personal appointment feeds
 │   │   │
 │   │   ├── utils/                      # Utility Modules
 │   │   │   ├── __init__.py             # Utils module initialization
