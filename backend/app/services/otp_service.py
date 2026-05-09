@@ -14,7 +14,7 @@ class OTPService:
         self.max_attempts = settings.OTP_MAX_ATTEMPTS
         self.max_otp_per_hour = 3
 
-    def generate_otp(self, length: int = 4) -> str:
+    def generate_otp(self, length: int = 6) -> str:
         """Generate a random OTP code"""
         return ''.join(random.choices(string.digits, k=length))
 
@@ -51,7 +51,7 @@ class OTPService:
             # Create auto-verified OTP for test user with 7-day validity
             otp = OTPCode(
                 phone=phone,
-                code="1111",
+                code="111111",
                 expires_at=datetime.utcnow() + timedelta(days=7),
                 verified=True,
                 attempts=0,
