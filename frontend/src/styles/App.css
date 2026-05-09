@@ -5,7 +5,7 @@
 
 .main-nav {
   background: var(--bg-secondary);
-  padding: 12px 24px;
+  padding: 12px 24px 12px 24px;
   box-shadow: var(--shadow-md);
   display: grid;
   grid-template-columns: 1fr auto auto 1fr;
@@ -76,7 +76,8 @@
   gap: 8px;
   align-items: center;
   justify-self: end;
-  justify-content: center;
+  justify-content: flex-end;
+  padding-right: 8px;
 }
 
 .user-name-display {
