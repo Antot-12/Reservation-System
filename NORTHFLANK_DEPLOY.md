@@ -195,8 +195,8 @@ Click **Add variable** for each:
 | `ADMIN_USERNAME` | `admin` |
 | `ADMIN_PASSWORD_HASH` | See below how to generate |
 | `ADMIN_PHONE` | `+380501234567` (your phone) |
-| `CORS_ORIGINS` | `https://your-app.vercel.app` (update later) |
-| `FRONTEND_URL` | `https://your-app.vercel.app` (update later) |
+| `CORS_ORIGINS` | `https://reservation-system-hnidan.vercel.app` |
+| `FRONTEND_URL` | `https://reservation-system-hnidan.vercel.app` |
 | `REDIS_ENABLED` | `false` |
 | `ENVIRONMENT` | `production` |
 | `ENABLE_METRICS` | `true` |
@@ -351,6 +351,8 @@ Click **Continue**
 | `REACT_APP_API_URL` | `https://backend-p-xxxxx.northflank.app` |
 | `REACT_APP_API_VERSION` | `v1` |
 
+Your frontend is already deployed at: **https://reservation-system-hnidan.vercel.app**
+
 ---
 
 ## Step 5.4: Deploy
@@ -368,8 +370,8 @@ Click **Continue**
 1. Go to Northflank → `backend` service
 2. **Environment** tab
 3. Update:
-   - `CORS_ORIGINS` = `https://your-app.vercel.app`
-   - `FRONTEND_URL` = `https://your-app.vercel.app`
+   - `CORS_ORIGINS` = `https://reservation-system-hnidan.vercel.app`
+   - `FRONTEND_URL` = `https://reservation-system-hnidan.vercel.app`
 4. Click **Update & restart**
 
 ---
@@ -506,7 +508,7 @@ Your app is now running on:
 
 | Service | URL |
 |---------|-----|
-| Frontend | `https://your-app.vercel.app` |
+| Frontend | `https://reservation-system-hnidan.vercel.app` |
 | Backend API | `https://backend-xxx.northflank.app` |
 | Health Check | `https://backend-xxx.northflank.app/health` |
 | Telegram Bot | @your_bot_username |
