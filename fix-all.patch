@@ -1,0 +1,702 @@
+diff --git a/frontend/src/components/AdminScheduleView.js b/frontend/src/components/AdminScheduleView.js
+index cbef31a..a1ff4f8 100644
+--- a/frontend/src/components/AdminScheduleView.js
++++ b/frontend/src/components/AdminScheduleView.js
+@@ -3,6 +3,19 @@ import Calendar from 'react-calendar';
+ import { format, startOfWeek, addDays, isSameDay } from 'date-fns';
+ import { uk } from 'date-fns/locale';
+ import { toast } from 'react-toastify';
++import {
++  getScheduleConfig,
++  updateSchedule,
++  getSlots,
++  getBlockedSlots,
++  deleteBlockedSlot,
++  blockSlot as blockSlotApi,
++  getAdminDaysOff,
++  addDayOff,
++  removeDayOff,
++  getAllAppointments,
++  createAppointmentAdmin
++} from '../services/adminService';
+ import 'react-calendar/dist/Calendar.css';
+ import '../styles/AdminScheduleView.css';
+ 
+@@ -10,6 +23,7 @@ const AdminScheduleView = () => {
+   const [selectedDate, setSelectedDate] = useState(null);
+   const [slots, setSlots] = useState([]);
+   const [loading, setLoading] = useState(false);
++  const [slotsLoaded, setSlotsLoaded] = useState(false); // Track if slots were loaded
+   const [bookedAppointments, setBookedAppointments] = useState([]);
+   const [blockedSlots, setBlockedSlots] = useState([]);
+   const [daysOff, setDaysOff] = useState([]);
+@@ -29,20 +43,13 @@ const AdminScheduleView = () => {
+ 
+   const loadScheduleConfig = async () => {
+     try {
+-      const response = await fetch('/api/v1/admin/schedule', {
+-        headers: {
+-          'Authorization': `Bearer ${localStorage.getItem('adminToken')}`
+-        }
++      const data = await getScheduleConfig();
++      setScheduleConfig(data);
++      setHoursForm({
++        start_time: data.start_time,
++        end_time: data.end_time,
++        slot_duration: data.slot_duration
+       });
+-      if (response.ok) {
+-        const data = await response.json();
+-        setScheduleConfig(data);
+-        setHoursForm({
+-          start_time: data.start_time,
+-          end_time: data.end_time,
+-          slot_duration: data.slot_duration
+-        });
+-      }
+     } catch (error) {
+       console.error('Error loading schedule config:', error);
+     }
+@@ -55,16 +62,14 @@ const AdminScheduleView = () => {
+     while (checkDate <= maxCheckDate) {
+       try {
+         const dateStr = format(checkDate, 'yyyy-MM-dd');
+-        const response = await fetch(`/api/v1/slots?from_date=${dateStr}&to_date=${dateStr}`);
+-        if (response.ok) {
+-          const data = await response.json();
+-          if (data && data.length > 0) {
+-            setSelectedDate(checkDate);
+-            // Store the slots we just fetched to avoid refetching
+-            setSlots(data);
+-            setLoading(false);
+-            return;
+-          }
++        const data = await getSlots(dateStr, dateStr);
++        if (data && data.length > 0) {
++          setSelectedDate(checkDate);
++          // Store the slots we just fetched to avoid refetching
++          setSlots(data);
++          setSlotsLoaded(true);
++          setLoading(false);
++          return;
+         }
+       } catch (error) {
+         console.error('Error checking date:', error);
+@@ -74,41 +79,29 @@ const AdminScheduleView = () => {
+ 
+     // If no slots found in 30 days, just select today
+     setSelectedDate(new Date());
++    setSlotsLoaded(true);
+   };
+ 
+   const loadSlots = useCallback(async () => {
++    if (loading) return;
+     setLoading(true);
+     try {
+       const dateStr = format(selectedDate, 'yyyy-MM-dd');
+-      const response = await fetch(`/api/v1/slots?from_date=${dateStr}&to_date=${dateStr}`);
+-      if (!response.ok) {
+-        console.error('Failed to load slots:', response.status);
+-        setSlots([]);
+-        return;
+-      }
+-      const data = await response.json();
++      const data = await getSlots(dateStr, dateStr);
+       setSlots(data);
++      setSlotsLoaded(true);
+     } catch (error) {
+       console.error('Error loading slots:', error);
+       setSlots([]);
++      setSlotsLoaded(true);
+     } finally {
+       setLoading(false);
+     }
+-  }, [selectedDate]);
++  }, [selectedDate, loading]);
+ 
+   const loadBlockedSlots = useCallback(async () => {
+     try {
+-      const response = await fetch('/api/v1/admin/blocked-slots', {
+-        headers: {
+-          'Authorization': `Bearer ${localStorage.getItem('adminToken')}`
+-        }
+-      });
+-      if (!response.ok) {
+-        console.error('Failed to load blocked slots:', response.status);
+-        setBlockedSlots([]);
+-        return;
+-      }
+-      const data = await response.json();
++      const data = await getBlockedSlots();
+       setBlockedSlots(data);
+     } catch (error) {
+       console.error('Error loading blocked slots:', error);
+@@ -120,17 +113,7 @@ const AdminScheduleView = () => {
+     setBookedAppointments([]);
+     try {
+       const dateStr = format(selectedDate, 'yyyy-MM-dd');
+-      const response = await fetch(`/api/v1/admin/appointments?from_date=${dateStr}&to_date=${dateStr}&status=booked&limit=100`, {
+-        headers: {
+-          'Authorization': `Bearer ${localStorage.getItem('adminToken')}`
+-        }
+-      });
+-      if (!response.ok) {
+-        console.error('Failed to load booked appointments:', response.status);
+-        setBookedAppointments([]);
+-        return;
+-      }
+-      const data = await response.json();
++      const data = await getAllAppointments(dateStr, dateStr, 'booked', null, 0, 100);
+       setBookedAppointments(data.items || []);
+     } catch (error) {
+       console.error('Error loading booked appointments:', error);
+@@ -140,17 +123,7 @@ const AdminScheduleView = () => {
+ 
+   const loadDaysOff = useCallback(async () => {
+     try {
+-      const response = await fetch('/api/v1/admin/days-off', {
+-        headers: {
+-          'Authorization': `Bearer ${localStorage.getItem('adminToken')}`
+-        }
+-      });
+-      if (!response.ok) {
+-        console.error('Failed to load days off:', response.status);
+-        setDaysOff([]);
+-        return;
+-      }
+-      const data = await response.json();
++      const data = await getAdminDaysOff();
+       setDaysOff(data);
+     } catch (error) {
+       console.error('Error loading days off:', error);
+@@ -168,41 +141,27 @@ const AdminScheduleView = () => {
+   // Reload data when selected date changes (skip slots if we already have them from findFirstAvailableDate)
+   useEffect(() => {
+     if (selectedDate) {
+-      if (slots.length === 0 && !loading) {
++      if (!slotsLoaded && !loading) {
+         loadSlots();
+       }
+       loadBlockedSlots();
+       loadBookedAppointments();
+       loadDaysOff();
+     }
+-  }, [selectedDate, slots.length, loading, loadSlots, loadBlockedSlots, loadBookedAppointments, loadDaysOff]);
++  }, [selectedDate, slotsLoaded, loading, loadSlots, loadBlockedSlots, loadBookedAppointments, loadDaysOff]);
+ 
+   const blockSlot = async (slot) => {
+     try {
+-      const response = await fetch('/api/v1/admin/block-slot', {
+-        method: 'POST',
+-        headers: {
+-          'Content-Type': 'application/json',
+-          'Authorization': `Bearer ${localStorage.getItem('adminToken')}`
+-        },
+-        body: JSON.stringify({
+-          start_time: slot.start_time,
+-          end_time: slot.end_time
+-        })
++      await blockSlotApi({
++        start_time: slot.start_time,
++        end_time: slot.end_time
+       });
+-
+-      if (response.ok) {
+-        toast.success('Слот заблоковано');
+-        loadBlockedSlots();
+-        loadSlots();
+-      } else {
+-        const error = await response.text();
+-        console.error('Failed to block slot:', response.status, error);
+-        toast.error(`Помилка блокування: ${response.status}`);
+-      }
++      toast.success('Слот заблоковано');
++      loadBlockedSlots();
++      loadSlots();
+     } catch (error) {
+       console.error('Error blocking slot:', error);
+-      toast.error('Помилка з\'єднання');
++      toast.error('Помилка блокування');
+     }
+   };
+ 
+@@ -229,32 +188,19 @@ const AdminScheduleView = () => {
+ 
+     setBookingSubmitting(true);
+     try {
+-      const response = await fetch('/api/v1/admin/appointments/create', {
+-        method: 'POST',
+-        headers: {
+-          'Content-Type': 'application/json',
+-          'Authorization': `Bearer ${localStorage.getItem('adminToken')}`
+-        },
+-        body: JSON.stringify({
+-          name: bookingForm.name.trim(),
+-          phone: bookingForm.phone.trim(),
+-          start_time: bookingSlot.start_time
+-        })
++      await createAppointmentAdmin({
++        name: bookingForm.name.trim(),
++        phone: bookingForm.phone.trim(),
++        start_time: bookingSlot.start_time
+       });
+-
+-      if (response.ok) {
+-        toast.success('Запис створено');
+-        closeBookingForm(true);
+-        loadSlots();
+-        loadBookedAppointments();
+-      } else {
+-        const errorData = await response.json().catch(() => null);
+-        const message = errorData?.detail || `Помилка створення: ${response.status}`;
+-        toast.error(message);
+-      }
++      toast.success('Запис створено');
++      closeBookingForm(true);
++      loadSlots();
++      loadBookedAppointments();
+     } catch (error) {
+       console.error('Error creating appointment:', error);
+-      toast.error('Помилка з\'єднання');
++      const message = error.response?.data?.detail || 'Помилка створення';
++      toast.error(message);
+     } finally {
+       setBookingSubmitting(false);
+     }
+@@ -262,45 +208,21 @@ const AdminScheduleView = () => {
+ 
+   const unblockSlot = async (slotId) => {
+     try {
+-      const response = await fetch(`/api/v1/admin/blocked-slots/${slotId}`, {
+-        method: 'DELETE',
+-        headers: {
+-          'Authorization': `Bearer ${localStorage.getItem('adminToken')}`
+-        }
+-      });
+-
+-      if (response.ok) {
+-        toast.success('Слот розблоковано');
+-        loadBlockedSlots();
+-        loadSlots();
+-      } else {
+-        const error = await response.text();
+-        console.error('Failed to unblock slot:', response.status, error);
+-        toast.error(`Помилка розблокування: ${response.status}`);
+-      }
++      await deleteBlockedSlot(slotId);
++      toast.success('Слот розблоковано');
++      loadBlockedSlots();
++      loadSlots();
+     } catch (error) {
+       console.error('Error unblocking slot:', error);
+-      toast.error('Помилка з\'єднання');
++      toast.error('Помилка розблокування');
+     }
+   };
+ 
+   const blockDay = async (date) => {
+     try {
+-      const response = await fetch('/api/v1/admin/days-off', {
+-        method: 'POST',
+-        headers: {
+-          'Content-Type': 'application/json',
+-          'Authorization': `Bearer ${localStorage.getItem('adminToken')}`
+-        },
+-        body: JSON.stringify({
+-          date: format(date, 'yyyy-MM-dd')
+-        })
+-      });
+-
+-      if (response.ok) {
+-        loadDaysOff();
+-        loadSlots();
+-      }
++      await addDayOff(format(date, 'yyyy-MM-dd'));
++      loadDaysOff();
++      loadSlots();
+     } catch (error) {
+       console.error('Error blocking day:', error);
+     }
+@@ -311,17 +233,9 @@ const AdminScheduleView = () => {
+     if (!dayOff) return;
+ 
+     try {
+-      const response = await fetch(`/api/v1/admin/days-off/${dayOff.id}`, {
+-        method: 'DELETE',
+-        headers: {
+-          'Authorization': `Bearer ${localStorage.getItem('adminToken')}`
+-        }
+-      });
+-
+-      if (response.ok) {
+-        loadDaysOff();
+-        loadSlots();
+-      }
++      await removeDayOff(dayOff.id);
++      loadDaysOff();
++      loadSlots();
+     } catch (error) {
+       console.error('Error unblocking day:', error);
+     }
+@@ -356,13 +270,7 @@ const AdminScheduleView = () => {
+         const promises = blockedDates.map(date => {
+           const dayOff = daysOff.find(d => isSameDay(new Date(d.date), date));
+           if (!dayOff) return Promise.resolve();
+-
+-          return fetch(`/api/v1/admin/days-off/${dayOff.id}`, {
+-            method: 'DELETE',
+-            headers: {
+-              'Authorization': `Bearer ${localStorage.getItem('adminToken')}`
+-            }
+-          });
++          return removeDayOff(dayOff.id);
+         });
+ 
+         await Promise.all(promises);
+@@ -370,16 +278,7 @@ const AdminScheduleView = () => {
+       } else {
+         // Block all matching days
+         const promises = datesToCheck.map(date =>
+-          fetch('/api/v1/admin/days-off', {
+-            method: 'POST',
+-            headers: {
+-              'Content-Type': 'application/json',
+-              'Authorization': `Bearer ${localStorage.getItem('adminToken')}`
+-            },
+-            body: JSON.stringify({
+-              date: format(date, 'yyyy-MM-dd')
+-            })
+-          })
++          addDayOff(format(date, 'yyyy-MM-dd'))
+         );
+ 
+         await Promise.all(promises);
+@@ -447,15 +346,7 @@ const AdminScheduleView = () => {
+           }
+         }
+ 
+-        const promises = weekDaysOff.map(dayOff =>
+-          fetch(`/api/v1/admin/days-off/${dayOff.id}`, {
+-            method: 'DELETE',
+-            headers: {
+-              'Authorization': `Bearer ${localStorage.getItem('adminToken')}`
+-            }
+-          })
+-        );
+-
++        const promises = weekDaysOff.map(dayOff => removeDayOff(dayOff.id));
+         await Promise.all(promises);
+         toast.success('Тиждень розблоковано');
+       } else {
+@@ -463,18 +354,7 @@ const AdminScheduleView = () => {
+         const promises = [];
+         for (let i = 0; i < 7; i++) {
+           const date = addDays(weekStart, i);
+-          promises.push(
+-            fetch('/api/v1/admin/days-off', {
+-              method: 'POST',
+-              headers: {
+-                'Content-Type': 'application/json',
+-                'Authorization': `Bearer ${localStorage.getItem('adminToken')}`
+-              },
+-              body: JSON.stringify({
+-                date: format(date, 'yyyy-MM-dd')
+-              })
+-            })
+-          );
++          promises.push(addDayOff(format(date, 'yyyy-MM-dd')));
+         }
+ 
+         await Promise.all(promises);
+@@ -492,28 +372,14 @@ const AdminScheduleView = () => {
+   const handleUpdateHours = async (e) => {
+     e.preventDefault();
+     try {
+-      const response = await fetch('/api/v1/admin/schedule', {
+-        method: 'POST',
+-        headers: {
+-          'Content-Type': 'application/json',
+-          'Authorization': `Bearer ${localStorage.getItem('adminToken')}`
+-        },
+-        body: JSON.stringify(hoursForm)
+-      });
+-
+-      if (response.ok) {
+-        toast.success('Робочі години оновлено');
+-        setEditingHours(false);
+-        loadScheduleConfig();
+-        loadSlots();
+-      } else {
+-        const error = await response.text();
+-        console.error('Failed to update hours:', response.status, error);
+-        toast.error(`Помилка оновлення: ${response.status}`);
+-      }
++      await updateSchedule(hoursForm);
++      toast.success('Робочі години оновлено');
++      setEditingHours(false);
++      loadScheduleConfig();
++      loadSlots();
+     } catch (error) {
+       console.error('Error updating hours:', error);
+-      toast.error('Помилка з\'єднання');
++      toast.error('Помилка оновлення');
+     }
+   };
+ 
+@@ -689,6 +555,7 @@ const AdminScheduleView = () => {
+               onChange={(date) => {
+                 setSelectedDate(date);
+                 setSlots([]); // Clear slots to trigger fresh load for manually selected date
++                setSlotsLoaded(false); // Reset loaded flag
+               }}
+               value={selectedDate}
+               locale="uk-UA"
+diff --git a/frontend/src/components/SlotPicker.js b/frontend/src/components/SlotPicker.js
+index 615b5ee..3cdb7d2 100644
+--- a/frontend/src/components/SlotPicker.js
++++ b/frontend/src/components/SlotPicker.js
+@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
+ import Calendar from 'react-calendar';
+ import { format, addMonths, isBefore, startOfDay, addDays, isSameDay, parseISO } from 'date-fns';
+ import { uk } from 'date-fns/locale';
+-import { getAvailableSlots } from '../services/userService';
++import { getAvailableSlots, getDaysOff } from '../services/userService';
+ import { toast } from 'react-toastify';
+ import { Spinner } from './Loading';
+ import 'react-calendar/dist/Calendar.css';
+@@ -18,20 +18,15 @@ const SlotPicker = ({ onSlotSelect }) => {
+ 
+   const fetchDaysOff = async () => {
+     try {
+-      const response = await fetch('/api/v1/days-off');
+-      if (response.ok) {
+-        const data = await response.json();
+-        console.log('Days off API response:', data);
+-        const dates = data.map(d => {
+-          const parsed = parseISO(d.date);
+-          console.log('Parsed date:', parsed, 'Original:', d.date);
+-          return parsed;
+-        });
+-        console.log('Days off loaded:', dates);
+-        setDaysOff(dates);
+-      } else {
+-        console.error('Failed to fetch days off:', response.status);
+-      }
++      const data = await getDaysOff();
++      console.log('Days off API response:', data);
++      const dates = data.map(d => {
++        const parsed = parseISO(d.date);
++        console.log('Parsed date:', parsed, 'Original:', d.date);
++        return parsed;
++      });
++      console.log('Days off loaded:', dates);
++      setDaysOff(dates);
+     } catch (error) {
+       console.error('Error fetching days off:', error);
+     }
+diff --git a/frontend/src/pages/BookingPage.js b/frontend/src/pages/BookingPage.js
+index 6e43f1e..f528f33 100644
+--- a/frontend/src/pages/BookingPage.js
++++ b/frontend/src/pages/BookingPage.js
+@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
+ import { format, parseISO } from 'date-fns';
+ import { uk } from 'date-fns/locale';
+ import { toast } from 'react-toastify';
+-import { getAvailableSlots, createAppointment, getUserAppointments, cancelAppointment, deleteAppointment, sendOTP, verifyOTP, getUserProfile, createOrUpdateProfile, clearSlotsCache } from '../services/userService';
++import { getAvailableSlots, createAppointment, getUserAppointments, cancelAppointment, deleteAppointment, sendOTP, verifyOTP, getUserProfile, createOrUpdateProfile, clearSlotsCache, getDaysOff } from '../services/userService';
+ import { getUserPhone, saveUserSession } from '../utils/storage';
+ import { addMonths, isBefore, isWeekend, startOfDay, addDays, isSameDay } from 'date-fns';
+ import Calendar from 'react-calendar';
+@@ -29,20 +29,19 @@ const BookingPage = ({ onUserVerified }) => {
+   const [selectedSlot, setSelectedSlot] = useState(null);
+   const [slots, setSlots] = useState([]);
+   const [slotsLoading, setSlotsLoading] = useState(false);
++  const [slotsLoaded, setSlotsLoaded] = useState(false); // Track if slots were loaded for current date
+   const [daysOff, setDaysOff] = useState([]);
+   const [userAppointments, setUserAppointments] = useState([]);
+   const [appointmentsLoading, setAppointmentsLoading] = useState(false);
++  const [initialLoadDone, setInitialLoadDone] = useState(false); // Prevent multiple initial loads
+ 
+   const maxDate = addMonths(new Date(), 6);
+ 
+   const loadDaysOff = useCallback(async () => {
+     try {
+-      const response = await fetch('/api/v1/days-off');
+-      if (response.ok) {
+-        const data = await response.json();
+-        const dates = data.map(d => parseISO(d.date));
+-        setDaysOff(dates);
+-      }
++      const data = await getDaysOff();
++      const dates = data.map(d => parseISO(d.date));
++      setDaysOff(dates);
+     } catch (error) {
+       console.error('Error fetching days off:', error);
+     }
+@@ -61,17 +60,20 @@ const BookingPage = ({ onUserVerified }) => {
+   }, [phone]);
+ 
+   const loadSlots = useCallback(async () => {
++    if (!selectedDate || slotsLoading) return;
+     setSlotsLoading(true);
+     try {
+       const dateStr = format(selectedDate, 'yyyy-MM-dd');
+       const data = await getAvailableSlots(dateStr, dateStr);
+       setSlots(data);
++      setSlotsLoaded(true);
+     } catch (error) {
+       toast.error('Помилка завантаження слотів');
++      setSlotsLoaded(true); // Mark as loaded even on error to prevent infinite retries
+     } finally {
+       setSlotsLoading(false);
+     }
+-  }, [selectedDate]);
++  }, [selectedDate, slotsLoading]);
+ 
+   const isDayOff = useCallback((date) => {
+     return daysOff.some(dayOff => isSameDay(startOfDay(dayOff), startOfDay(date)));
+@@ -82,7 +84,8 @@ const BookingPage = ({ onUserVerified }) => {
+     const maxCheckDate = addDays(new Date(), 30);
+ 
+     while (isBefore(checkDate, maxCheckDate)) {
+-      if (!isWeekend(checkDate) && !isDayOff(checkDate)) {
++      // Skip weekends - don't need daysOff check here for initial load
++      if (!isWeekend(checkDate)) {
+         try {
+           const dateStr = format(checkDate, 'yyyy-MM-dd');
+           const data = await getAvailableSlots(dateStr, dateStr);
+@@ -90,6 +93,7 @@ const BookingPage = ({ onUserVerified }) => {
+             setSelectedDate(checkDate);
+             // Store the slots we just fetched to avoid refetching
+             setSlots(data);
++            setSlotsLoaded(true);
+             setSlotsLoading(false);
+             return;
+           }
+@@ -100,23 +104,25 @@ const BookingPage = ({ onUserVerified }) => {
+       checkDate = addDays(checkDate, 1);
+     }
+     setSelectedDate(new Date());
+-  }, [isDayOff]);
++    setSlotsLoaded(true);
++  }, []); // No dependencies - runs once
+ 
+-  // Auto-find first available date and load days-off
++  // Auto-find first available date and load days-off (runs once when verified)
+   useEffect(() => {
+-    if (verified && !selectedDate) {
++    if (verified && !initialLoadDone) {
++      setInitialLoadDone(true);
+       loadDaysOff();
+       loadUserAppointments();
+       findFirstAvailableDate();
+     }
+-  }, [verified, selectedDate, loadDaysOff, loadUserAppointments, findFirstAvailableDate]);
++  }, [verified, initialLoadDone, loadDaysOff, loadUserAppointments, findFirstAvailableDate]);
+ 
+-  // Load slots when date changes (but skip if we already have slots from findFirstAvailableDate)
++  // Load slots when date changes manually (not from findFirstAvailableDate)
+   useEffect(() => {
+-    if (selectedDate && slots.length === 0 && !slotsLoading) {
++    if (selectedDate && !slotsLoaded && !slotsLoading) {
+       loadSlots();
+     }
+-  }, [selectedDate, slots.length, slotsLoading, loadSlots]);
++  }, [selectedDate, slotsLoaded, slotsLoading, loadSlots]);
+ 
+   const handleCancelAppointment = async (appointmentId) => {
+     if (!window.confirm('Скасувати цей запис?')) return;
+@@ -134,7 +140,7 @@ const BookingPage = ({ onUserVerified }) => {
+       // Reload slots to show the freed time
+       if (selectedDate) {
+         setSlots([]); // Clear current slots
+-        loadSlots();
++        setSlotsLoaded(false); // Trigger reload
+       }
+     } catch (error) {
+       toast.error(error.response?.data?.detail || 'Помилка скасування');
+@@ -278,10 +284,11 @@ const BookingPage = ({ onUserVerified }) => {
+       setSelectedDate(null);
+       setSelectedSlot(null);
+       setSlots([]); // Clear slots
++      setSlotsLoaded(false);
++      setInitialLoadDone(false); // Allow re-finding first available date
+ 
+-      // Reload appointments and find next available date
++      // Reload appointments
+       loadUserAppointments();
+-      setTimeout(() => findFirstAvailableDate(), 500);
+     } catch (error) {
+       toast.error(error.response?.data?.detail || 'Помилка створення запису');
+       setSelectedSlot(null);
+@@ -586,6 +593,7 @@ const BookingPage = ({ onUserVerified }) => {
+                     onChange={(date) => {
+                       setSelectedDate(date);
+                       setSlots([]); // Clear slots to trigger fresh load for manually selected date
++                      setSlotsLoaded(false); // Reset loaded flag
+                       setStep(2);
+                     }}
+                     value={selectedDate}
+diff --git a/frontend/src/services/adminService.js b/frontend/src/services/adminService.js
+index ba95d3d..d87ccdf 100644
+--- a/frontend/src/services/adminService.js
++++ b/frontend/src/services/adminService.js
+@@ -142,3 +142,44 @@ export const exportExcel = async (fromDate, toDate) => {
+   });
+   return response.data;
+ };
++
++// Schedule Config
++export const getScheduleConfig = async () => {
++  const response = await api.get('/admin/schedule');
++  return response.data;
++};
++
++// Get available slots (public endpoint)
++export const getSlots = async (fromDate, toDate) => {
++  const response = await api.get('/slots', {
++    params: {
++      from_date: fromDate,
++      to_date: toDate,
++    },
++  });
++  return response.data;
++};
++
++// Get blocked slots
++export const getBlockedSlots = async () => {
++  const response = await api.get('/admin/blocked-slots');
++  return response.data;
++};
++
++// Delete blocked slot
++export const deleteBlockedSlot = async (slotId) => {
++  const response = await api.delete(`/admin/blocked-slots/${slotId}`);
++  return response.data;
++};
++
++// Get days off (admin version)
++export const getAdminDaysOff = async () => {
++  const response = await api.get('/admin/days-off');
++  return response.data;
++};
++
++// Create appointment (admin)
++export const createAppointmentAdmin = async (data) => {
++  const response = await api.post('/admin/appointments/create', data);
++  return response.data;
++};
+diff --git a/frontend/src/services/userService.js b/frontend/src/services/userService.js
+index ce0a201..637a288 100644
+--- a/frontend/src/services/userService.js
++++ b/frontend/src/services/userService.js
+@@ -105,3 +105,9 @@ export const createOrUpdateProfile = async (phone, name, birthdate) => {
+   });
+   return response.data;
+ };
++
++// Days Off Service
++export const getDaysOff = async () => {
++  const response = await api.get('/days-off');
++  return response.data;
++};

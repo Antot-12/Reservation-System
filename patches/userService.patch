@@ -1,0 +1,21 @@
+diff --git a/frontend/src/services/userService.js b/frontend/src/services/userService.js
+index ce0a201..637a288 100644
+--- a/frontend/src/services/userService.js
++++ b/frontend/src/services/userService.js
+@@ -98,10 +98,16 @@ export const getUserProfile = async (phone) => {
+   });
+   return response.data;
+ };
+ 
+ export const createOrUpdateProfile = async (phone, name, birthdate) => {
+   const response = await api.post('/profile', null, {
+     params: { phone, name, birthdate },
+   });
+   return response.data;
+ };
++
++// Days Off Service
++export const getDaysOff = async () => {
++  const response = await api.get('/days-off');
++  return response.data;
++};
