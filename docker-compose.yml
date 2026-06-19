@@ -1,0 +1,91 @@
+# Docker Compose for Oracle Cloud VM
+# Deploy: backend + telegram_bot + PostgreSQL + Redis
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: rezervation_db
+    restart: always
+    environment:
+      POSTGRES_DB: rezervation
+      POSTGRES_USER: ${DB_USER:-rezervation}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-change_this_password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-rezervation}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: rezervation_redis
+    restart: always
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # FastAPI Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: rezervation_backend
+    restart: always
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://${DB_USER:-rezervation}:${DB_PASSWORD:-change_this_password}@postgres:5432/rezervation
+      - REDIS_URL=redis://redis:6379
+    env_file:
+      - path: ./backend/.env.production
+        required: false
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Telegram Bot
+  telegram_bot:
+    build:
+      context: ./telegram_bot
+      dockerfile: Dockerfile
+    container_name: rezervation_bot
+    restart: always
+    environment:
+      - DATABASE_URL=postgresql://${DB_USER:-rezervation}:${DB_PASSWORD:-change_this_password}@postgres:5432/rezervation
+      - BACKEND_URL=http://backend:8000
+    env_file:
+      - path: ./telegram_bot/.env.production
+        required: false
+    depends_on:
+      backend:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  default:
+    name: rezervation_network

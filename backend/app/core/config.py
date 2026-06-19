@@ -20,9 +20,13 @@ class Settings(BaseSettings):
     # Admin Authentication
     ADMIN_USERNAME: str
     ADMIN_PASSWORD_HASH: str
+    ADMIN_PHONE: str = "+380000000000"  # Admin phone number for OTP login
 
     # Frontend
     FRONTEND_URL: str = "http://localhost:3000"
+
+    # CORS - comma-separated list of allowed origins
+    CORS_ORIGINS: str = "http://localhost:3000"
 
     # Security
     SECRET_KEY: str

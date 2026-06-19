@@ -11,6 +11,7 @@ from app.core.monitoring import (
     CONTENT_TYPE_LATEST
 )
 from app.core.config import settings
+from app.core.exceptions import setup_exception_handlers
 import logging
 
 logger = logging.getLogger(__name__)
@@ -27,10 +28,18 @@ app = FastAPI(
     version="1.0.0"
 )
 
+# Setup global exception handlers
+setup_exception_handlers(app)
+
 # Configure CORS
+# Parse CORS origins from environment variable (comma-separated)
+cors_origins = [origin.strip() for origin in settings.CORS_ORIGINS.split(",") if origin.strip()]
+if not cors_origins:
+    cors_origins = ["http://localhost:3000"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure this for production
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -48,9 +57,16 @@ if settings.ENABLE_METRICS:
 @app.on_event("startup")
 async def startup_event():
     logger.info("Application starting up")
-    logger.info(f"Database connection pool initialized")
-    pool_status = get_pool_status()
-    logger.info(f"Pool status: {pool_status}")
+    logger.info(f"Environment: {settings.ENVIRONMENT}")
+    logger.info(f"CORS origins: {cors_origins}")
+
+    # Test database connection
+    try:
+        pool_status = get_pool_status()
+        logger.info(f"Database connection pool initialized: {pool_status}")
+    except Exception as e:
+        logger.error(f"Database connection failed: {e}")
+        raise
 
 # Shutdown event
 @app.on_event("shutdown")
@@ -89,19 +105,31 @@ def root():
 def health_check():
     """
     Health check endpoint with database pool status.
+    Used by Docker healthcheck and load balancers.
     """
-    pool_status = get_pool_status()
-    return {
-        "status": "healthy",
-        "version": "1.0.0",
-        "database": {
-            "pool_size": pool_status["size"],
-            "checked_in": pool_status["checked_in"],
-            "checked_out": pool_status["checked_out"],
-            "overflow": pool_status["overflow"],
-            "total_connections": pool_status["total_connections"]
+    try:
+        pool_status = get_pool_status()
+        return {
+            "status": "healthy",
+            "version": "1.0.0",
+            "environment": settings.ENVIRONMENT,
+            "database": {
+                "status": "connected",
+                "pool_size": pool_status["size"],
+                "checked_in": pool_status["checked_in"],
+                "checked_out": pool_status["checked_out"],
+                "overflow": pool_status["overflow"],
+                "total_connections": pool_status["total_connections"]
+            }
         }
-    }
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return {
+            "status": "unhealthy",
+            "version": "1.0.0",
+            "environment": settings.ENVIRONMENT,
+            "error": str(e)
+        }
 
 
 @app.get("/csrf-token")
